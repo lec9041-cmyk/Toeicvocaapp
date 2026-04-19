@@ -1,1 +1,107 @@
-# repo-template
+# TOEIC Master - 토익 단어 암기 앱
+
+세련되고 모던한 디자인의 토익 단어 학습 웹 앱입니다.
+
+## 🌟 주요 기능
+
+- ✅ **플래시카드 학습**: 세련된 glassmorphism 디자인
+- ✅ **4지선다 퀴즈**: 실시간 정답 피드백
+- ✅ **XP & 레벨 시스템**: 학습하며 성장하는 단어 나무
+- ✅ **학습 통계**: 달력 히트맵으로 학습 기록 확인
+- ✅ **완벽한 반응형**: 모바일/태블릿/데스크톱 최적화
+- ✅ **음성 발음**: TTS를 통한 영단어 발음
+
+## 🚀 Vercel 배포 방법
+
+### 1단계: GitHub에 코드 푸시
+
+현재 작업 디렉토리의 코드를 GitHub 레포지토리에 푸시합니다:
+
+```bash
+# 로컬에서 작업하는 경우
+git init
+git add .
+git commit -m "Initial commit: TOEIC Master app"
+git branch -M main
+git remote add origin https://github.com/lec9041-cmyk/TOEIC-VOCA.git
+git push -u origin main
+```
+
+### 2단계: Vercel 배포
+
+1. **Vercel 계정 생성/로그인**
+   - https://vercel.com 접속
+   - GitHub 계정으로 로그인
+
+2. **새 프로젝트 생성**
+   - "Add New..." → "Project" 클릭
+   - GitHub 레포지토리 `TOEIC-VOCA` 선택
+
+3. **빌드 설정 (자동 감지됨)**
+   - Framework Preset: `Vite`
+   - Build Command: `pnpm build`
+   - Output Directory: `dist`
+   - Install Command: `pnpm install`
+
+4. **배포**
+   - "Deploy" 버튼 클릭
+   - 약 1-2분 후 배포 완료!
+
+### 3단계: 배포 완료! 🎉
+
+배포가 완료되면 다음과 같은 URL을 받게 됩니다:
+- `https://toeic-voca.vercel.app` (또는 프로젝트명에 따라 다름)
+
+## 📱 로컬 개발
+
+```bash
+# 의존성 설치
+pnpm install
+
+# 개발 서버 실행
+pnpm dev
+
+# 빌드
+pnpm build
+```
+
+## 🔄 자동 배포
+
+GitHub에 코드를 푸시하면 Vercel이 자동으로 새 버전을 배포합니다:
+
+```bash
+git add .
+git commit -m "Update features"
+git push
+```
+
+## 📂 CSV 데이터 업데이트
+
+전체 토익 단어 데이터를 추가하려면:
+
+1. `public/toeic_words_sample.csv` 파일을 실제 CSV 데이터로 교체
+2. GitHub에 푸시
+3. Vercel이 자동으로 재배포
+
+CSV 형식:
+```csv
+day,english,korean
+1,word,단어
+```
+
+## 🎨 기술 스택
+
+- **React 18** - UI 라이브러리
+- **TypeScript** - 타입 안정성
+- **Tailwind CSS v4** - 스타일링
+- **Vite** - 빌드 도구
+- **shadcn/ui** - UI 컴포넌트
+- **localStorage** - 데이터 저장
+
+## 📝 라이선스
+
+MIT License
+
+---
+
+Made with ❤️ by Claude
