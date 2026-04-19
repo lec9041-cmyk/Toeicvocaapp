@@ -180,53 +180,49 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
             <div className="space-y-6 md:space-y-8">
               <div
                 className={`
-                  relative min-h-[400px] md:min-h-[500px] rounded-3xl overflow-hidden
+                  relative rounded-3xl overflow-hidden
                   bg-gradient-to-br from-white via-slate-50 to-blue-50/30
                   border border-gray-200/50 shadow-2xl
-                  transition-all duration-500
+                  transition-all duration-300
                   ${!isRevealed
-                    ? 'cursor-pointer hover:shadow-3xl hover:scale-[1.02] active:scale-[0.98]'
+                    ? 'cursor-pointer hover:shadow-3xl hover:scale-[1.01] active:scale-[0.99]'
                     : 'shadow-xl'
                   }
                 `}
                 onClick={!isRevealed ? handleFlashReveal : undefined}
               >
                 {/* Decorative gradient orbs */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -mr-32 -mt-32" />
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-pink-400/20 to-orange-400/20 rounded-full blur-3xl -ml-32 -mb-32" />
+                <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl -mr-24 -mt-24" />
+                <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-pink-400/20 to-orange-400/20 rounded-full blur-3xl -ml-24 -mb-24" />
 
                 {/* Content */}
-                <div className="relative z-10 h-full flex flex-col items-center justify-center p-8 md:p-12">
-                  {!isRevealed && (
-                    <div className="absolute top-8 right-8">
-                      <div className="px-4 py-2 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-lg">
-                        <span className="text-xs font-bold text-gray-600">탭하여 확인</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="text-center space-y-6 md:space-y-8">
-                    <div className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tight bg-gradient-to-br from-gray-900 via-gray-700 to-gray-600 bg-clip-text text-transparent leading-tight px-4">
+                <div className="relative z-10 flex flex-col items-center justify-center px-6 py-16 md:px-12 md:py-24">
+                  <div className="text-center space-y-6 md:space-y-8 w-full max-w-2xl">
+                    {/* Question */}
+                    <div className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight bg-gradient-to-br from-gray-900 via-gray-700 to-gray-600 bg-clip-text text-transparent leading-tight">
                       {question}
                     </div>
 
+                    {/* Answer (revealed) */}
                     {isRevealed && (
                       <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent mx-8" />
-                        <div className="text-2xl sm:text-3xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 px-4">
+                        <div className="h-px bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                        <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
                           {answer}
                         </div>
                       </div>
                     )}
 
+                    {/* Tap hint (not revealed) */}
                     {!isRevealed && (
-                      <div className="absolute bottom-6 md:bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 md:gap-3 animate-bounce">
-                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center shadow-lg">
-                          <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      <div className="pt-8 md:pt-12 flex flex-col items-center gap-3 opacity-60">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center shadow-lg animate-pulse">
+                          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </div>
-                        <p className="text-xs md:text-sm font-semibold text-gray-500">탭하여 뜻 보기</p>
+                        <p className="text-xs md:text-sm font-semibold text-gray-500">카드를 탭하여 뜻 확인</p>
                       </div>
                     )}
                   </div>
