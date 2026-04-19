@@ -75,19 +75,25 @@ git commit -m "Update features"
 git push
 ```
 
-## 📂 CSV 데이터 업데이트
+## 📂 단어 데이터
 
-전체 토익 단어 데이터를 추가하려면:
+현재 앱에는 **DAY 1-9**, 총 **1,500개 이상**의 토익 필수 단어가 포함되어 있습니다.
 
-1. `public/toeic_words_sample.csv` 파일을 실제 CSV 데이터로 교체
-2. GitHub에 푸시
-3. Vercel이 자동으로 재배포
+CSV 파일 위치: `public/toeic_words.csv`
 
 CSV 형식:
 ```csv
-day,english,korean
-1,word,단어
+day,no,word,meaning
+DAY1,1,resume,이력서
+DAY1,2,opening,"공석,결원;개장,개시"
 ```
+
+### 데이터 업데이트
+
+추가 단어를 넣으려면:
+1. `public/toeic_words.csv` 파일 수정
+2. `DaySelector.tsx`에서 `totalDays` 값 조정
+3. GitHub에 푸시하면 자동 배포
 
 ## 🎨 기술 스택
 

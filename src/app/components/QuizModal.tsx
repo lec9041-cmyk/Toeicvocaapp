@@ -6,10 +6,44 @@ import { Volume2, X, Star, BookOpen } from 'lucide-react';
 
 interface Word {
   day: number;
+  no: number;
   english: string;
   korean: string;
   index: number;
 }
+
+const DAY_CATEGORIES: { [key: number]: string } = {
+  1: '채용',
+  2: '규직,법률',
+  3: '일반사무',
+  4: '일반사무',
+  5: '일반사무',
+  6: '여가,공동체',
+  7: '마케팅',
+  8: '마케팅',
+  9: '경제',
+  10: '소정',
+  11: '제품개발',
+  12: '생산',
+  13: '고객서비스',
+  14: '여행,공항',
+  15: '계약',
+  16: '상거래',
+  17: '무역,배송',
+  18: '숙박,식당',
+  19: '수익',
+  20: '회계',
+  21: '회사동향',
+  22: '미팅',
+  23: '사원복지',
+  24: '인사이동',
+  25: '교통',
+  26: '은행',
+  27: '투자',
+  28: '건물,주택',
+  29: '환경',
+  30: '건강',
+};
 
 interface QuizModalProps {
   words: Word[];
@@ -110,6 +144,11 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
         <div className="p-6 md:p-8 border-b border-gray-100">
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-3 flex-wrap">
+              <div className="px-4 py-2 rounded-full bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200">
+                <span className="text-sm font-bold text-purple-700">
+                  DAY{currentWord.day} · {DAY_CATEGORIES[currentWord.day]}
+                </span>
+              </div>
               <div className="px-4 py-2 rounded-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
                 <span className="text-sm font-bold text-blue-700">{currentIndex + 1} / {words.length}</span>
               </div>

@@ -6,10 +6,45 @@ import { Switch } from './components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Separator } from './components/ui/separator';
 import { QuizModal } from './components/QuizModal';
-import { Play, RotateCcw, Target, TrendingUp, Zap, Volume2, Timer, RefreshCw, Eye, Calendar as CalendarIcon, Home, BookOpen, BarChart3, Settings as SettingsIcon } from 'lucide-react';
+import { DaySelector } from './components/DaySelector';
+import { Play, RotateCcw, Target, TrendingUp, Zap, Volume2, Timer, RefreshCw, Eye, Calendar as CalendarIcon, Home, BookOpen, BarChart3, Settings as SettingsIcon, ChevronDown, Check } from 'lucide-react';
+
+const DAY_CATEGORIES: { [key: number]: string } = {
+  1: '채용',
+  2: '규직,법률',
+  3: '일반사무',
+  4: '일반사무',
+  5: '일반사무',
+  6: '여가,공동체',
+  7: '마케팅',
+  8: '마케팅',
+  9: '경제',
+  10: '소정',
+  11: '제품개발',
+  12: '생산',
+  13: '고객서비스',
+  14: '여행,공항',
+  15: '계약',
+  16: '상거래',
+  17: '무역,배송',
+  18: '숙박,식당',
+  19: '수익',
+  20: '회계',
+  21: '회사동향',
+  22: '미팅',
+  23: '사원복지',
+  24: '인사이동',
+  25: '교통',
+  26: '은행',
+  27: '투자',
+  28: '건물,주택',
+  29: '환경',
+  30: '건강',
+};
 
 interface Word {
   day: number;
+  no: number; // Word number in the entire list
   english: string;
   korean: string;
   index: number;
@@ -43,7 +78,8 @@ interface Settings {
 export default function App() {
   const [currentTab, setCurrentTab] = useState('home');
   const [words, setWords] = useState<Word[]>([]);
-  const [selectedDays, setSelectedDays] = useState<number[]>([5]);
+  const [selectedDays, setSelectedDays] = useState<number[]>([1]);
+  const [selectedRanges, setSelectedRanges] = useState<string[]>(['core', 'basic', '800', '900']); // All ranges by default
   const [stats, setStats] = useState<Stats>({
     todayCount: 0,
     streak: 0,
@@ -56,6 +92,7 @@ export default function App() {
 
   const [todayGoal] = useState(30);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [showDaySelector, setShowDaySelector] = useState(false);
   const [quizWords, setQuizWords] = useState<Word[]>([]);
 
   // Learning settings
@@ -101,43 +138,76 @@ export default function App() {
 
   const loadSampleWords = async () => {
     try {
-      const response = await fetch('/toeic_words_sample.csv');
-      const csvText = await response.text();
-      const lines = csvText.trim().split('\n');
-      const headers = lines[0].split(',');
+      console.log('CSV 로딩 시작...');
 
+      // Try importing from src/imports first (Figma Make environment)
+      let csvText: string;
+      try {
+        const importedCSV = await import('../imports/toeic_words.csv?raw');
+        csvText = importedCSV.default;
+        console.log('✅ CSV imported from src/imports/');
+      } catch (importError) {
+        console.log('⚠️ Import failed, trying fetch from public/');
+        const response = await fetch('/toeic_words.csv');
+        console.log('Response status:', response.status, response.statusText);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        csvText = await response.text();
+      }
+
+      console.log('CSV 텍스트 길이:', csvText.length);
+
+      const lines = csvText.trim().split('\n');
+      console.log('CSV 라인 수:', lines.length);
+
+      // Skip header line (day,no,word,meaning)
       const loadedWords: Word[] = lines.slice(1).map((line, index) => {
-        const values = line.split(',');
+        // Handle CSV with quoted fields
+        const matches = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+        if (!matches || matches.length < 4) return null;
+
+        const day = matches[0].replace(/^DAY/, ''); // "DAY1" -> "1"
+        const no = matches[1].trim(); // Word number
+        const word = matches[2].replace(/^"|"$/g, ''); // Remove quotes
+        const meaning = matches[3].replace(/^"|"$/g, ''); // Remove quotes
+
         return {
-          day: parseInt(values[0]),
-          english: values[1],
-          korean: values[2],
+          day: parseInt(day),
+          no: parseInt(no),
+          english: word,
+          korean: meaning,
           index: index,
         };
-      });
+      }).filter((w): w is Word => w !== null);
 
+      console.log(`✅ 총 ${loadedWords.length}개 단어 로드 완료!`);
       setWords(loadedWords);
+
+      // Auto-select DAY 1 if no days selected
+      if (selectedDays.length === 0) {
+        setSelectedDays([1]);
+      }
     } catch (error) {
-      console.error('Failed to load words:', error);
+      console.error('❌ CSV 로드 실패:', error);
+      alert('단어 데이터를 불러오는데 실패했습니다.\n\n에러: ' + error + '\n\n샘플 데이터를 사용합니다.');
+
       // Fallback to sample data
       const sampleWords: Word[] = [
-        { day: 5, english: 'accomplish', korean: '성취하다 완수하다', index: 0 },
-        { day: 5, english: 'achievement', korean: '성취 업적', index: 1 },
-        { day: 5, english: 'acquire', korean: '획득하다 습득하다', index: 2 },
-        { day: 5, english: 'acquisition', korean: '획득 인수', index: 3 },
-        { day: 5, english: 'advance', korean: '진전 발전 / 전진하다', index: 4 },
-        { day: 5, english: 'advantage', korean: '이점 유리함', index: 5 },
-        { day: 5, english: 'beneficial', korean: '유익한 이로운', index: 6 },
-        { day: 5, english: 'benefit', korean: '혜택 이익', index: 7 },
-        { day: 5, english: 'capable', korean: '유능한 능력 있는', index: 8 },
-        { day: 5, english: 'capacity', korean: '능력 수용력', index: 9 },
-        { day: 5, english: 'competent', korean: '유능한 적격의', index: 10 },
-        { day: 5, english: 'competitive', korean: '경쟁력 있는', index: 11 },
-        { day: 5, english: 'competitor', korean: '경쟁자', index: 12 },
-        { day: 5, english: 'proficient', korean: '능숙한 숙련된', index: 13 },
-        { day: 5, english: 'proficiency', korean: '숙달 능숙', index: 14 },
+        { day: 1, no: 1, english: 'resume', korean: '이력서', index: 0 },
+        { day: 1, no: 2, english: 'opening', korean: '공석, 결원', index: 1 },
+        { day: 1, no: 3, english: 'applicant', korean: '지원자, 신청자', index: 2 },
+        { day: 1, no: 4, english: 'requirement', korean: '필요조건, 요건', index: 3 },
+        { day: 1, no: 5, english: 'qualified', korean: '자격있는, 적격의', index: 4 },
+        { day: 1, no: 6, english: 'candidate', korean: '후보자, 지원자', index: 5 },
+        { day: 1, no: 7, english: 'confidence', korean: '확신, 자신', index: 6 },
+        { day: 1, no: 8, english: 'professional', korean: '전문적인, 전문가', index: 7 },
+        { day: 1, no: 9, english: 'interview', korean: '면접, 면접을 보다', index: 8 },
+        { day: 1, no: 10, english: 'hire', korean: '고용하다', index: 9 },
       ];
       setWords(sampleWords);
+      setSelectedDays([1]);
     }
   };
 
@@ -145,11 +215,48 @@ export default function App() {
     return 100 * level;
   };
 
+  const getWordNumberRange = (range: string): [number, number] => {
+    switch (range) {
+      case 'core': return [1, 40];
+      case 'basic': return [41, 68];
+      case '800': return [69, 136];
+      case '900': return [137, 999999];
+      default: return [1, 999999];
+    }
+  };
+
   const startQuiz = () => {
-    const filteredWords = words.filter(w => selectedDays.includes(w.day));
+    if (selectedDays.length === 0) {
+      alert('DAY를 먼저 선택해주세요!');
+      setShowDaySelector(true);
+      return;
+    }
+
+    console.log('총 단어 수:', words.length);
+    console.log('선택된 DAY:', selectedDays);
+    console.log('선택된 범위:', selectedRanges);
+
+    // Filter by selected days
+    let filteredWords = words.filter(w => selectedDays.includes(w.day));
+    console.log('DAY 필터 후:', filteredWords.length, '개');
+
+    // Filter by selected ranges
+    filteredWords = filteredWords.filter(w => {
+      return selectedRanges.some(range => {
+        const [min, max] = getWordNumberRange(range);
+        return w.no >= min && w.no <= max;
+      });
+    });
+    console.log('범위 필터 후:', filteredWords.length, '개');
+
+    if (filteredWords.length === 0) {
+      alert('선택한 조건에 맞는 단어가 없습니다.\n\n디버그 정보:\n- 총 단어: ' + words.length + '개\n- 선택 DAY: ' + selectedDays.join(', ') + '\n- 선택 범위: ' + selectedRanges.join(', ') + '\n\n브라우저 콘솔(F12)에서 자세한 정보를 확인하세요.');
+      return;
+    }
+
     const selectedWords = filteredWords
       .sort(() => settings.orderMode === 'random' ? Math.random() - 0.5 : 1)
-      .slice(0, parseInt(count));
+      .slice(0, Math.min(parseInt(count), filteredWords.length));
 
     setQuizWords(selectedWords);
     setShowQuiz(true);
@@ -264,14 +371,24 @@ export default function App() {
                 </div>
               </div>
 
-              <Button
-                size="lg"
-                onClick={startQuiz}
-                className="mt-6 md:mt-12 px-8 md:px-12 py-5 md:py-7 text-base md:text-lg font-semibold rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105"
-              >
-                <Play className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                학습 시작하기
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
+                <Button
+                  size="lg"
+                  onClick={() => setShowDaySelector(true)}
+                  variant="outline"
+                  className="px-6 md:px-8 py-5 md:py-7 text-base md:text-lg font-semibold rounded-2xl border-2 hover:bg-gray-50"
+                >
+                  📅 DAY 선택
+                </Button>
+                <Button
+                  size="lg"
+                  onClick={startQuiz}
+                  className="flex-1 px-8 md:px-12 py-5 md:py-7 text-base md:text-lg font-semibold rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105"
+                >
+                  <Play className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                  학습 시작하기
+                </Button>
+              </div>
             </div>
 
             {/* Stats Grid */}
@@ -303,6 +420,64 @@ export default function App() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Selected Info */}
+            <div className="rounded-2xl p-6 bg-white border-2 border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-900">선택된 학습 범위</h3>
+                <button
+                  onClick={() => setShowDaySelector(true)}
+                  className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  변경
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 mb-2">선택된 DAY</div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedDays.length === 0 ? (
+                      <Badge variant="outline">없음</Badge>
+                    ) : selectedDays.length > 6 ? (
+                      <>
+                        {selectedDays.slice(0, 6).map(day => (
+                          <div key={day} className="inline-flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 border border-blue-300">
+                            <span className="text-xs font-bold text-blue-700">DAY {day}</span>
+                            <span className="text-[10px] font-medium text-blue-600">{DAY_CATEGORIES[day]}</span>
+                          </div>
+                        ))}
+                        <Badge variant="outline">+{selectedDays.length - 6}개</Badge>
+                      </>
+                    ) : (
+                      selectedDays.map(day => (
+                        <div key={day} className="inline-flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 border border-blue-300">
+                          <span className="text-xs font-bold text-blue-700">DAY {day}</span>
+                          <span className="text-[10px] font-medium text-blue-600">{DAY_CATEGORIES[day]}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-gray-500 mb-2">단어 범위</div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedRanges.map(range => {
+                      const labels: { [key: string]: string } = {
+                        core: '핵심(1-40)',
+                        basic: '기초(41-68)',
+                        '800': '800+(69-136)',
+                        '900': '900+(137~)'
+                      };
+                      return (
+                        <Badge key={range} variant="outline" className="font-semibold">
+                          {labels[range]}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Quick Actions */}
@@ -344,6 +519,48 @@ export default function App() {
             <div className="text-center mb-6 md:mb-12">
               <h2 className="text-3xl md:text-5xl font-bold text-gray-900 mb-2 md:mb-4">학습 설정</h2>
               <p className="text-sm md:text-lg text-gray-500">나만의 학습 경험을 만들어보세요</p>
+            </div>
+
+            {/* DAY 선택 버튼 */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-gray-700">선택 DAY</label>
+              <button
+                onClick={() => setShowDaySelector(true)}
+                className="w-full flex items-center justify-between p-4 md:p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 hover:border-blue-300 transition-all duration-200 hover:shadow-lg group"
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="flex -space-x-2 flex-shrink-0">
+                    {selectedDays.slice(0, 3).map((day) => (
+                      <div
+                        key={day}
+                        className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm border-2 border-white shadow-md"
+                      >
+                        {day}
+                      </div>
+                    ))}
+                    {selectedDays.length > 3 && (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold text-sm border-2 border-white shadow-md">
+                        +{selectedDays.length - 3}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-left flex-1 min-w-0">
+                    <div className="font-bold text-gray-900">
+                      {selectedDays.length === 0
+                        ? 'DAY를 선택하세요'
+                        : selectedDays.length === 1
+                        ? `DAY ${selectedDays[0]} · ${DAY_CATEGORIES[selectedDays[0]]}`
+                        : `${selectedDays.length}개 DAY`
+                      }
+                    </div>
+                    <div className="text-xs text-gray-600 truncate">
+                      {selectedDays.length > 1 && selectedDays.slice(0, 3).map(d => `${d}·${DAY_CATEGORIES[d]}`).join(', ')}
+                      {selectedDays.length > 3 && '...'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown className="w-5 h-5 text-blue-600 group-hover:translate-y-0.5 transition-transform flex-shrink-0" />
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
@@ -405,10 +622,58 @@ export default function App() {
               </div>
             </div>
 
+            {/* Word Range Selection */}
+            <div className="space-y-3 p-6 rounded-2xl bg-gradient-to-br from-gray-50 to-white border-2 border-gray-200">
+              <h4 className="font-bold text-gray-900 mb-3">학습 범위 선택</h4>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: 'core', label: '핵심단어', range: '1-40', color: 'blue' },
+                  { id: 'basic', label: '기초완성', range: '41-68', color: 'purple' },
+                  { id: '800', label: '800+', range: '69-136', color: 'orange' },
+                  { id: '900', label: '900+', range: '137~', color: 'green' },
+                ].map((range) => {
+                  const isSelected = selectedRanges.includes(range.id);
+                  return (
+                    <button
+                      key={range.id}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedRanges(selectedRanges.filter(r => r !== range.id));
+                        } else {
+                          setSelectedRanges([...selectedRanges, range.id]);
+                        }
+                      }}
+                      className={`
+                        p-4 rounded-xl transition-all duration-200 border-2 text-left
+                        ${isSelected
+                          ? `bg-gradient-to-br ${
+                              range.color === 'blue' ? 'from-blue-500 to-indigo-500' :
+                              range.color === 'purple' ? 'from-purple-500 to-pink-500' :
+                              range.color === 'orange' ? 'from-orange-500 to-amber-500' :
+                              'from-green-500 to-emerald-500'
+                            } border-transparent text-white shadow-lg`
+                          : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                        }
+                      `}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-sm">{range.label}</span>
+                        {isSelected && <Check className="w-4 h-4" />}
+                      </div>
+                      <div className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+                        {range.range}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <Button
               size="lg"
               onClick={startQuiz}
-              className="w-full h-14 md:h-16 text-base md:text-lg font-semibold rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-2xl shadow-blue-500/30 transition-all duration-300 hover:scale-105"
+              disabled={selectedRanges.length === 0}
+              className="w-full h-14 md:h-16 text-base md:text-lg font-semibold rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-2xl shadow-blue-500/30 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Zap className="w-4 h-4 md:w-5 md:h-5 mr-2" />
               학습 시작
@@ -424,6 +689,15 @@ export default function App() {
               </Badge>
               <Badge variant="outline" className="px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold border-2">
                 XP {stats.xp}/{calculateXPForLevel(stats.level)}
+              </Badge>
+              <Badge variant="outline" className="px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold border-2 bg-green-50 text-green-700 border-green-300">
+                학습 가능 {(() => {
+                  const filtered = words.filter(w => selectedDays.includes(w.day) && selectedRanges.some(range => {
+                    const [min, max] = getWordNumberRange(range);
+                    return w.no >= min && w.no <= max;
+                  }));
+                  return filtered.length;
+                })()}개
               </Badge>
             </div>
           </div>
@@ -588,6 +862,15 @@ export default function App() {
           direction={direction as 'en2ko' | 'ko2en'}
           onClose={() => setShowQuiz(false)}
           onComplete={handleQuizComplete}
+        />
+      )}
+
+      {/* Day Selector Modal */}
+      {showDaySelector && (
+        <DaySelector
+          selectedDays={selectedDays}
+          onDaysChange={setSelectedDays}
+          onClose={() => setShowDaySelector(false)}
         />
       )}
     </div>
