@@ -39,9 +39,9 @@ git push -u origin main
 
 3. **빌드 설정 (자동 감지됨)**
    - Framework Preset: `Vite`
-   - Build Command: `pnpm build`
+   - Build Command: `npm run build`
    - Output Directory: `dist`
-   - Install Command: `pnpm install`
+   - Install Command: `npm install` (자동)
 
 4. **배포**
    - "Deploy" 버튼 클릭
@@ -56,13 +56,13 @@ git push -u origin main
 
 ```bash
 # 의존성 설치
-pnpm install
+npm install
 
-# 개발 서버 실행
-pnpm dev
+# 개발 서버 실행 (Figma Make에서는 자동 실행됨)
+npm run dev
 
 # 빌드
-pnpm build
+npm run build
 ```
 
 ## 🔄 자동 배포

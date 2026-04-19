@@ -3,10 +3,8 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": "9.x"
+    "node": "20.x"
   },
   "scripts": {
     "build": "vite build",
@@ -80,9 +78,7 @@
     "typescript": "5.7.3",
     "vite": "6.3.5"
   },
-  "pnpm": {
-    "overrides": {
-      "vite": "6.3.5"
-    }
+  "overrides": {
+    "vite": "6.3.5"
   }
 }
