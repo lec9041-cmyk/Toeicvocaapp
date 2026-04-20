@@ -39,10 +39,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(defaultState);
 
   useEffect(() => {
+    const storedSettings = storage.get<Partial<SettingsState>>(STORAGE_KEYS.SETTINGS_V1, {});
     setState((prev) => ({
       ...prev,
       stats: migrateStatsToV3(),
-      settings: storage.get(STORAGE_KEYS.SETTINGS_V1, DEFAULT_SETTINGS),
+      settings: { ...DEFAULT_SETTINGS, ...storedSettings },
       wrongWords: storage.get(STORAGE_KEYS.WRONG_WORDS_V1, [] as Word[]),
       resumeSession: storage.get<ResumeSession | null>(STORAGE_KEYS.RESUME_SESSION_V1, null),
       sessionHistory: storage.get(STORAGE_KEYS.SESSION_HISTORY_V1, []),

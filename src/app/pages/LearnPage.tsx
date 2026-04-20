@@ -3,7 +3,7 @@ import { LearnControlPanel } from '../components/learn/LearnControlPanel';
 import { QuizModal } from '../components/quiz/QuizModal';
 import { useAppStore } from '../store/useAppStore';
 import { useQuizSession } from '../store/useQuizSession';
-import { QuizDirection, QuizMode, Word } from '../types/stats';
+import { Word } from '../types/stats';
 
 const getWordNumberRange = (range: string): [number, number] => {
   switch (range) {
@@ -21,39 +21,56 @@ interface LearnPageProps {
 }
 
 export function LearnPage({ autoStart, onAutoStarted }: LearnPageProps) {
-  const { state, recordAnswer, saveResumeSession, finalizeQuizSession, clearResumeSession } = useAppStore();
+  const {
+    state,
+    setSelectedDays,
+    setSelectedRanges,
+    updateSettings,
+    recordAnswer,
+    saveResumeSession,
+    finalizeQuizSession,
+    clearResumeSession,
+  } = useAppStore();
   const [showQuiz, setShowQuiz] = useState(false);
-  const [mode] = useState<QuizMode>('flash');
-  const [direction] = useState<QuizDirection>('en2ko');
-  const [count] = useState(30);
+  const activeMode = state.resumeSession?.mode ?? state.settings.mode;
+  const activeDirection = state.resumeSession?.direction ?? state.settings.direction;
+  const activeCount = state.resumeSession?.count ?? state.settings.count;
+  const activeDays = state.resumeSession?.days ?? state.selectedDays;
+  const activeRanges = state.resumeSession?.ranges ?? state.selectedRanges;
 
   const filteredWords = useMemo(() => {
-    const byDay = state.words.filter((word) => state.selectedDays.includes(word.day));
+    const byDay = state.words.filter((word) => activeDays.includes(word.day));
     return byDay.filter((word) =>
-      state.selectedRanges.some((range) => {
+      activeRanges.some((range) => {
         const [min, max] = getWordNumberRange(range);
         return word.no >= min && word.no <= max;
       })
     );
-  }, [state.words, state.selectedDays, state.selectedRanges]);
+  }, [state.words, activeDays, activeRanges]);
+
+  const orderedWords = useMemo(() => {
+    if (state.settings.orderMode === 'sequential') return filteredWords;
+    return [...filteredWords].sort(() => Math.random() - 0.5);
+  }, [filteredWords, state.settings.orderMode]);
 
   const quizWords: Word[] = useMemo(() => {
     if (state.resumeSession?.remainingWords?.length) return state.resumeSession.remainingWords;
-    return filteredWords.slice(0, Math.min(count, filteredWords.length));
-  }, [state.resumeSession, filteredWords, count]);
+    return orderedWords.slice(0, Math.min(activeCount, orderedWords.length));
+  }, [state.resumeSession, orderedWords, activeCount]);
 
   const meta = {
-    mode,
-    direction,
-    count,
-    days: state.selectedDays,
-    ranges: state.selectedRanges,
+    mode: activeMode,
+    direction: activeDirection,
+    count: activeCount,
+    days: activeDays,
+    ranges: activeRanges,
   };
 
   const session = useQuizSession({
     words: quizWords,
-    mode,
-    direction,
+    mode: activeMode,
+    direction: activeDirection,
+    shuffleChoices: state.settings.shuffleChoices,
     meta,
     onRecordAnswer: recordAnswer,
     onSaveResume: saveResumeSession,
@@ -75,12 +92,30 @@ export function LearnPage({ autoStart, onAutoStarted }: LearnPageProps) {
 
   return (
     <div className="space-y-4">
-      <LearnControlPanel canStart={quizWords.length > 0} availableCount={filteredWords.length} onStart={start} />
+      <LearnControlPanel
+        canStart={quizWords.length > 0}
+        availableCount={filteredWords.length}
+        mode={state.settings.mode}
+        direction={state.settings.direction}
+        count={state.settings.count}
+        selectedDays={state.selectedDays}
+        selectedRanges={state.selectedRanges}
+        orderMode={state.settings.orderMode}
+        shuffleChoices={state.settings.shuffleChoices}
+        onModeChange={(mode) => updateSettings({ mode })}
+        onDirectionChange={(direction) => updateSettings({ direction })}
+        onCountChange={(count) => updateSettings({ count })}
+        onSelectedDaysChange={setSelectedDays}
+        onSelectedRangesChange={setSelectedRanges}
+        onOrderModeChange={(orderMode) => updateSettings({ orderMode })}
+        onShuffleChoicesChange={(shuffleChoices) => updateSettings({ shuffleChoices })}
+        onStart={start}
+      />
 
       {showQuiz && session.current && (
         <QuizModal
-          mode={mode}
-          direction={direction}
+          mode={activeMode}
+          direction={activeDirection}
           word={session.current}
           index={session.index}
           total={quizWords.length}

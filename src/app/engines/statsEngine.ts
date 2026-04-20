@@ -1,21 +1,8 @@
+import { getTodayLocalDateKey, calculateLocalDateStreak } from '../utils/date';
 import { StatsState } from '../types/stats';
 
-const todayKey = () => new Date().toISOString().split('T')[0];
-
-const calcStreak = (dailySolvedMap: Record<string, number>) => {
-  let streak = 0;
-  const cursor = new Date();
-  while (true) {
-    const key = cursor.toISOString().split('T')[0];
-    if ((dailySolvedMap[key] || 0) <= 0) break;
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
-};
-
 export const applyAnswerProgress = (stats: StatsState): StatsState => {
-  const today = todayKey();
+  const today = getTodayLocalDateKey();
   const dailySolvedMap = {
     ...stats.dailySolvedMap,
     [today]: (stats.dailySolvedMap[today] || 0) + 1,
@@ -27,7 +14,7 @@ export const applyAnswerProgress = (stats: StatsState): StatsState => {
     totalSolvedCount: stats.totalSolvedCount + 1,
     dailySolvedMap,
     lastStudyDate: today,
-    streakDays: calcStreak(dailySolvedMap),
+    streakDays: calculateLocalDateStreak(dailySolvedMap),
   };
 };
 

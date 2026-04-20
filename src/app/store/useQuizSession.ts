@@ -7,6 +7,7 @@ interface UseQuizSessionProps {
   words: Word[];
   mode: QuizMode;
   direction: QuizDirection;
+  shuffleChoices: boolean;
   meta: QuizSessionMeta;
   onRecordAnswer: () => void;
   onSaveResume: (meta: QuizSessionMeta, remainingWords: Word[]) => void;
@@ -17,6 +18,7 @@ export const useQuizSession = ({
   words,
   mode,
   direction,
+  shuffleChoices,
   meta,
   onRecordAnswer,
   onSaveResume,
@@ -32,8 +34,8 @@ export const useQuizSession = ({
   const answer = direction === 'en2ko' ? current?.korean : current?.english;
   const choices = useMemo(() => {
     if (mode !== 'mc') return [];
-    return buildMcChoices(words, index, direction);
-  }, [mode, words, index, direction]);
+    return buildMcChoices(words, index, direction, shuffleChoices);
+  }, [mode, words, index, direction, shuffleChoices]);
 
   useEffect(() => {
     if (!words.length) return;
