@@ -50,10 +50,12 @@ interface QuizModalProps {
   mode: 'flash' | 'mc' | 'sa';
   direction: 'en2ko' | 'ko2en';
   onClose: () => void;
+  onQuestionSolved: (solvedCount: number) => void;
+  onSaveResumeSnapshot: (remainingWords: Word[]) => void;
   onComplete: (stats: { correct: number; total: number; xp: number; wrongWords?: Word[] }) => void;
 }
 
-export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizModalProps) {
+export function QuizModal({ words, mode, direction, onClose, onQuestionSolved, onSaveResumeSnapshot, onComplete }: QuizModalProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
@@ -136,6 +138,8 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
       // Record wrong word
       setWrongWordsList(nextWrongWords);
     }
+    onQuestionSolved(1);
+    onSaveResumeSnapshot(words.slice(currentIndex + 1));
     nextQuestion(nextScore, nextWrongWords);
   };
 
@@ -153,6 +157,8 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
     }
 
     setTimeout(() => {
+      onQuestionSolved(1);
+      onSaveResumeSnapshot(words.slice(currentIndex + 1));
       nextQuestion(
         correct ? score + 1 : score,
         correct ? wrongWordsList : [...wrongWordsList, currentWord]
@@ -203,7 +209,10 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={() => {
+                onSaveResumeSnapshot(words.slice(currentIndex));
+                onClose();
+              }}
               className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200 ml-4"
             >
               <X className="w-5 h-5 text-gray-500" />

@@ -8,6 +8,9 @@ import { Separator } from './components/ui/separator';
 import { QuizModal } from './components/QuizModal';
 import { DaySelector } from './components/DaySelector';
 import { Play, RotateCcw, Target, TrendingUp, Zap, Volume2, Timer, RefreshCw, Eye, Calendar as CalendarIcon, Home, BookOpen, BarChart3, Settings as SettingsIcon, ChevronDown, Check, Star } from 'lucide-react';
+import { Stats, DEFAULT_STATS, applyQuestionProgress, finalizeSessionStats, loadStatsFromStorage, saveStatsToStorage } from './engines/statsEngine';
+import { appendSessionRecord } from './engines/sessionEngine';
+import { clearResumePayload, saveResumePayload } from './engines/quizEngine';
 
 const DAY_CATEGORIES: { [key: number]: string } = {
   1: '채용',
@@ -49,99 +52,6 @@ interface Word {
   korean: string;
   index: number;
 }
-
-interface Stats {
-  todayCount: number;
-  streak: number;
-  totalSolved: number;
-  xp: number;
-  level: number;
-  lastStudyDate: string;
-  dailyLog: { [date: string]: number };
-}
-
-const DEFAULT_STATS: Stats = {
-  todayCount: 0,
-  streak: 0,
-  totalSolved: 0,
-  xp: 0,
-  level: 1,
-  lastStudyDate: '',
-  dailyLog: {},
-};
-
-const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-const calculateStreakFromDailyLog = (dailyLog: { [date: string]: number }, fromDate?: string) => {
-  const start = fromDate && isDateKey(fromDate) ? new Date(fromDate) : new Date();
-  if (Number.isNaN(start.getTime())) return 0;
-
-  let streak = 0;
-  const cursor = new Date(start);
-  while (true) {
-    const key = cursor.toISOString().split('T')[0];
-    if ((dailyLog[key] || 0) <= 0) break;
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
-};
-
-const normalizeStats = (raw: unknown): Stats => {
-  if (!raw || typeof raw !== 'object') return DEFAULT_STATS;
-  const candidate = raw as Partial<Stats>;
-
-  // Current schema
-  if (
-    typeof candidate.todayCount === 'number' &&
-    typeof candidate.streak === 'number' &&
-    typeof candidate.totalSolved === 'number' &&
-    typeof candidate.xp === 'number' &&
-    typeof candidate.level === 'number' &&
-    candidate.dailyLog &&
-    typeof candidate.dailyLog === 'object'
-  ) {
-    return {
-      ...DEFAULT_STATS,
-      ...candidate,
-      dailyLog: candidate.dailyLog as { [date: string]: number },
-    };
-  }
-
-  // Legacy schema compatibility (toeic_stats_v2 used as per-word stats map)
-  const legacyDailyRaw = localStorage.getItem('toeic_daily_v1');
-  let legacyDailyLog: { [date: string]: number } = {};
-  if (legacyDailyRaw) {
-    try {
-      const parsed = JSON.parse(legacyDailyRaw);
-      if (parsed && typeof parsed === 'object') {
-        legacyDailyLog = Object.fromEntries(
-          Object.entries(parsed).filter(
-            ([key, value]) => isDateKey(key) && typeof value === 'number'
-          )
-        );
-      }
-    } catch (e) {
-      legacyDailyLog = {};
-    }
-  }
-
-  const totalSolved = Object.values(raw as Record<string, any>).reduce((sum, entry) => {
-    if (!entry || typeof entry !== 'object') return sum;
-    return sum + (entry.correctCount || 0) + (entry.wrongCount || 0);
-  }, 0);
-
-  const today = new Date().toISOString().split('T')[0];
-  const lastStudyDate = Object.keys(legacyDailyLog).sort().at(-1) || '';
-  return {
-    ...DEFAULT_STATS,
-    totalSolved,
-    todayCount: legacyDailyLog[today] || 0,
-    dailyLog: legacyDailyLog,
-    lastStudyDate,
-    streak: calculateStreakFromDailyLog(legacyDailyLog),
-  };
-};
 
 interface Settings {
   orderMode: string;
@@ -265,19 +175,7 @@ export default function App() {
   };
 
   const loadStats = () => {
-    const savedStats = localStorage.getItem('toeic_stats_v2');
-    if (savedStats) {
-      try {
-        setStats(normalizeStats(JSON.parse(savedStats)));
-      } catch (e) {
-        setStats(DEFAULT_STATS);
-      }
-    }
-  };
-
-  const saveStats = (newStats: Stats) => {
-    setStats(newStats);
-    localStorage.setItem('toeic_stats_v2', JSON.stringify(newStats));
+    setStats(loadStatsFromStorage());
   };
 
   const loadSampleWords = async () => {
@@ -412,44 +310,12 @@ export default function App() {
     xp: number;
     wrongWords?: Word[];
   }) => {
-    const today = new Date().toISOString().split('T')[0];
-    const newXP = stats.xp + quizStats.xp;
-    const xpNeeded = calculateXPForLevel(stats.level);
-    let newLevel = stats.level;
-
-    if (newXP >= xpNeeded) {
-      newLevel = stats.level + 1;
-    }
-
-    const todayCount = (stats.lastStudyDate === today ? stats.todayCount : 0) + quizStats.total;
-    const newDailyLog = {
-      ...stats.dailyLog,
-      [today]: (stats.dailyLog[today] || 0) + quizStats.total,
-    };
-
-    const newStats = {
-      ...stats,
-      todayCount,
-      streak: calculateStreakFromDailyLog(newDailyLog),
-      totalSolved: stats.totalSolved + quizStats.total,
-      xp: newXP,
-      level: newLevel,
-      lastStudyDate: today,
-      dailyLog: newDailyLog,
-    };
-
-    saveStats(newStats);
-    localStorage.setItem('toeic_daily_v1', JSON.stringify(newDailyLog));
-    const sessionsRaw = localStorage.getItem('toeic_sessions_v1');
-    let sessions: any[] = [];
-    if (sessionsRaw) {
-      try {
-        sessions = JSON.parse(sessionsRaw);
-      } catch (e) {
-        sessions = [];
-      }
-    }
-    sessions.unshift({
+    setStats((prev) => {
+      const newStats = finalizeSessionStats(prev, { xp: quizStats.xp });
+      saveStatsToStorage(newStats);
+      return newStats;
+    });
+    appendSessionRecord({
       ts: Date.now(),
       mode,
       dir: direction,
@@ -459,7 +325,6 @@ export default function App() {
       days: selectedDays,
       ranges: selectedRanges,
     });
-    localStorage.setItem('toeic_sessions_v1', JSON.stringify(sessions.slice(0, 200)));
 
     // Save wrong words
     if (quizStats.wrongWords && quizStats.wrongWords.length > 0) {
@@ -474,10 +339,37 @@ export default function App() {
     }
 
     // Clear resume data on completion
-    localStorage.removeItem('toeic_resume_v1');
+    clearResumePayload();
     setHasResumeData(false);
 
     setShowQuiz(false);
+  };
+
+  const handleQuizQuestionSolved = (solvedCount: number) => {
+    setStats((prev) => {
+      const nextStats = applyQuestionProgress(prev, solvedCount);
+      saveStatsToStorage(nextStats);
+      return nextStats;
+    });
+  };
+
+  const saveResumeSnapshot = (remainingWords: Word[]) => {
+    if (!remainingWords.length) {
+      clearResumePayload();
+      setHasResumeData(false);
+      return;
+    }
+
+    saveResumePayload({
+      mode,
+      direction,
+      count: parseInt(count, 10) || remainingWords.length,
+      days: selectedDays,
+      ranges: selectedRanges,
+      remainingWords,
+      updatedAt: Date.now(),
+    });
+    setHasResumeData(true);
   };
 
   return (
@@ -1206,6 +1098,8 @@ export default function App() {
           mode={mode as 'flash' | 'mc' | 'sa'}
           direction={direction as 'en2ko' | 'ko2en'}
           onClose={() => setShowQuiz(false)}
+          onQuestionSolved={handleQuizQuestionSolved}
+          onSaveResumeSnapshot={saveResumeSnapshot}
           onComplete={handleQuizComplete}
         />
       )}
