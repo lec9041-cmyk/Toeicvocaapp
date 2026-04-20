@@ -126,14 +126,17 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
   };
 
   const handleFlashAnswer = (knowIt: boolean) => {
+    const nextScore = knowIt ? score + 1 : score;
+    const nextWrongWords = knowIt ? wrongWordsList : [...wrongWordsList, currentWord];
+
     if (knowIt) {
-      setScore(score + 1);
+      setScore(nextScore);
     } else {
       setWrongCount(wrongCount + 1);
       // Record wrong word
-      setWrongWordsList([...wrongWordsList, currentWord]);
+      setWrongWordsList(nextWrongWords);
     }
-    nextQuestion();
+    nextQuestion(nextScore, nextWrongWords);
   };
 
   const handleMCAnswer = (choice: string) => {
@@ -150,11 +153,14 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
     }
 
     setTimeout(() => {
-      nextQuestion();
+      nextQuestion(
+        correct ? score + 1 : score,
+        correct ? wrongWordsList : [...wrongWordsList, currentWord]
+      );
     }, 1200);
   };
 
-  const nextQuestion = () => {
+  const nextQuestion = (finalScore: number = score, finalWrongWords: Word[] = wrongWordsList) => {
     if (currentIndex < words.length - 1) {
       setCurrentIndex(currentIndex + 1);
       setIsRevealed(false);
@@ -162,12 +168,12 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
       setIsCorrect(null);
     } else {
       // Quiz complete
-      const xpGained = score * 10;
+      const xpGained = finalScore * 10;
       onComplete({
-        correct: score,
+        correct: finalScore,
         total: words.length,
         xp: xpGained,
-        wrongWords: wrongWordsList,
+        wrongWords: finalWrongWords,
       });
     }
   };
