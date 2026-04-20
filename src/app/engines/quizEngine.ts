@@ -6,7 +6,8 @@ export const gradeAnswer = (input: AnswerRecordInput) => input.isCorrect;
 export const buildMcChoices = (
   words: Word[],
   currentIndex: number,
-  direction: QuizDirection
+  direction: QuizDirection,
+  shuffleChoices: boolean
 ) => {
   const current = words[currentIndex];
   if (!current) return [];
@@ -18,7 +19,8 @@ export const buildMcChoices = (
     .slice(0, 3)
     .map((word) => (direction === 'en2ko' ? word.korean : word.english));
 
-  return [answer, ...wrongChoices].sort(() => Math.random() - 0.5);
+  const combined = [answer, ...wrongChoices];
+  return shuffleChoices ? combined.sort(() => Math.random() - 0.5) : combined;
 };
 
 export const buildResumeSnapshot = (meta: QuizSessionMeta, remainingWords: Word[]) => ({
