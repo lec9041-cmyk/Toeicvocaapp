@@ -8,6 +8,9 @@ import { Separator } from './components/ui/separator';
 import { QuizModal } from './components/QuizModal';
 import { DaySelector } from './components/DaySelector';
 import { Play, RotateCcw, Target, TrendingUp, Zap, Volume2, Timer, RefreshCw, Eye, Calendar as CalendarIcon, Home, BookOpen, BarChart3, Settings as SettingsIcon, ChevronDown, Check, Star } from 'lucide-react';
+import { Stats, DEFAULT_STATS, applyQuestionProgress, finalizeSessionStats, loadStatsFromStorage, saveStatsToStorage } from './engines/statsEngine';
+import { appendSessionRecord } from './engines/sessionEngine';
+import { clearResumePayload, saveResumePayload } from './engines/quizEngine';
 
 const DAY_CATEGORIES: { [key: number]: string } = {
   1: '채용',
@@ -50,16 +53,6 @@ interface Word {
   index: number;
 }
 
-interface Stats {
-  todayCount: number;
-  streak: number;
-  totalSolved: number;
-  xp: number;
-  level: number;
-  lastStudyDate: string;
-  dailyLog: { [date: string]: number };
-}
-
 interface Settings {
   orderMode: string;
   shuffleChoices: boolean;
@@ -81,13 +74,7 @@ export default function App() {
   const [selectedDays, setSelectedDays] = useState<number[]>([1]);
   const [selectedRanges, setSelectedRanges] = useState<string[]>(['core', 'basic', '800', '900']); // All ranges by default
   const [stats, setStats] = useState<Stats>({
-    todayCount: 0,
-    streak: 0,
-    totalSolved: 0,
-    xp: 0,
-    level: 1,
-    lastStudyDate: '',
-    dailyLog: {},
+    ...DEFAULT_STATS,
   });
 
   const [todayGoal] = useState(30);
@@ -188,15 +175,7 @@ export default function App() {
   };
 
   const loadStats = () => {
-    const savedStats = localStorage.getItem('toeic_stats_v2');
-    if (savedStats) {
-      setStats(JSON.parse(savedStats));
-    }
-  };
-
-  const saveStats = (newStats: Stats) => {
-    setStats(newStats);
-    localStorage.setItem('toeic_stats_v2', JSON.stringify(newStats));
+    setStats(loadStatsFromStorage());
   };
 
   const loadSampleWords = async () => {
@@ -331,32 +310,21 @@ export default function App() {
     xp: number;
     wrongWords?: Word[];
   }) => {
-    const today = new Date().toISOString().split('T')[0];
-    const newXP = stats.xp + quizStats.xp;
-    const xpNeeded = calculateXPForLevel(stats.level);
-    let newLevel = stats.level;
-
-    if (newXP >= xpNeeded) {
-      newLevel = stats.level + 1;
-    }
-
-    const newStreak = stats.lastStudyDate === today ? stats.streak : stats.streak + 1;
-
-    const newStats = {
-      ...stats,
-      todayCount: stats.todayCount + quizStats.total,
-      streak: newStreak,
-      totalSolved: stats.totalSolved + quizStats.total,
-      xp: newXP,
-      level: newLevel,
-      lastStudyDate: today,
-      dailyLog: {
-        ...stats.dailyLog,
-        [today]: (stats.dailyLog[today] || 0) + quizStats.total,
-      },
-    };
-
-    saveStats(newStats);
+    setStats((prev) => {
+      const newStats = finalizeSessionStats(prev, { xp: quizStats.xp });
+      saveStatsToStorage(newStats);
+      return newStats;
+    });
+    appendSessionRecord({
+      ts: Date.now(),
+      mode,
+      dir: direction,
+      total: quizStats.total,
+      score: quizStats.correct,
+      wrongCount: Math.max(0, quizStats.total - quizStats.correct),
+      days: selectedDays,
+      ranges: selectedRanges,
+    });
 
     // Save wrong words
     if (quizStats.wrongWords && quizStats.wrongWords.length > 0) {
@@ -371,10 +339,37 @@ export default function App() {
     }
 
     // Clear resume data on completion
-    localStorage.removeItem('toeic_resume_v1');
+    clearResumePayload();
     setHasResumeData(false);
 
     setShowQuiz(false);
+  };
+
+  const handleQuizQuestionSolved = (solvedCount: number) => {
+    setStats((prev) => {
+      const nextStats = applyQuestionProgress(prev, solvedCount);
+      saveStatsToStorage(nextStats);
+      return nextStats;
+    });
+  };
+
+  const saveResumeSnapshot = (remainingWords: Word[]) => {
+    if (!remainingWords.length) {
+      clearResumePayload();
+      setHasResumeData(false);
+      return;
+    }
+
+    saveResumePayload({
+      mode,
+      direction,
+      count: parseInt(count, 10) || remainingWords.length,
+      days: selectedDays,
+      ranges: selectedRanges,
+      remainingWords,
+      updatedAt: Date.now(),
+    });
+    setHasResumeData(true);
   };
 
   return (
@@ -1103,6 +1098,8 @@ export default function App() {
           mode={mode as 'flash' | 'mc' | 'sa'}
           direction={direction as 'en2ko' | 'ko2en'}
           onClose={() => setShowQuiz(false)}
+          onQuestionSolved={handleQuizQuestionSolved}
+          onSaveResumeSnapshot={saveResumeSnapshot}
           onComplete={handleQuizComplete}
         />
       )}
