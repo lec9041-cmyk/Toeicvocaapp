@@ -50,10 +50,12 @@ interface QuizModalProps {
   mode: 'flash' | 'mc' | 'sa';
   direction: 'en2ko' | 'ko2en';
   onClose: () => void;
+  onQuestionSolved: (solvedCount: number) => void;
+  onSaveResumeSnapshot: (remainingWords: Word[]) => void;
   onComplete: (stats: { correct: number; total: number; xp: number; wrongWords?: Word[] }) => void;
 }
 
-export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizModalProps) {
+export function QuizModal({ words, mode, direction, onClose, onQuestionSolved, onSaveResumeSnapshot, onComplete }: QuizModalProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
@@ -126,14 +128,19 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
   };
 
   const handleFlashAnswer = (knowIt: boolean) => {
+    const nextScore = knowIt ? score + 1 : score;
+    const nextWrongWords = knowIt ? wrongWordsList : [...wrongWordsList, currentWord];
+
     if (knowIt) {
-      setScore(score + 1);
+      setScore(nextScore);
     } else {
       setWrongCount(wrongCount + 1);
       // Record wrong word
-      setWrongWordsList([...wrongWordsList, currentWord]);
+      setWrongWordsList(nextWrongWords);
     }
-    nextQuestion();
+    onQuestionSolved(1);
+    onSaveResumeSnapshot(words.slice(currentIndex + 1));
+    nextQuestion(nextScore, nextWrongWords);
   };
 
   const handleMCAnswer = (choice: string) => {
@@ -150,11 +157,16 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
     }
 
     setTimeout(() => {
-      nextQuestion();
+      onQuestionSolved(1);
+      onSaveResumeSnapshot(words.slice(currentIndex + 1));
+      nextQuestion(
+        correct ? score + 1 : score,
+        correct ? wrongWordsList : [...wrongWordsList, currentWord]
+      );
     }, 1200);
   };
 
-  const nextQuestion = () => {
+  const nextQuestion = (finalScore: number = score, finalWrongWords: Word[] = wrongWordsList) => {
     if (currentIndex < words.length - 1) {
       setCurrentIndex(currentIndex + 1);
       setIsRevealed(false);
@@ -162,12 +174,12 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
       setIsCorrect(null);
     } else {
       // Quiz complete
-      const xpGained = score * 10;
+      const xpGained = finalScore * 10;
       onComplete({
-        correct: score,
+        correct: finalScore,
         total: words.length,
         xp: xpGained,
-        wrongWords: wrongWordsList,
+        wrongWords: finalWrongWords,
       });
     }
   };
@@ -197,7 +209,10 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={() => {
+                onSaveResumeSnapshot(words.slice(currentIndex));
+                onClose();
+              }}
               className="p-2 rounded-full hover:bg-gray-100 transition-colors duration-200 ml-4"
             >
               <X className="w-5 h-5 text-gray-500" />
