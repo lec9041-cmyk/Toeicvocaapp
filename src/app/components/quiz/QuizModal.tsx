@@ -46,7 +46,7 @@ export function QuizModal({
         <div className="p-6 space-y-5">
           <div className="text-3xl font-bold text-center">{question}</div>
 
-          {mode === 'flash' ? (
+          {mode === 'flash' || mode === 'sa' ? (
             <>
               {!revealed ? (
                 <button className="w-full py-4 rounded-xl bg-gray-100 font-semibold" onClick={onReveal}>
