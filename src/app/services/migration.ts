@@ -1,8 +1,7 @@
 import { STORAGE_KEYS } from '../constants/storageKeys';
 import { storage } from './storage';
 import { StatsState } from '../types/stats';
-
-const todayKey = () => new Date().toISOString().split('T')[0];
+import { getTodayLocalDateKey, calculateLocalDateStreak } from '../utils/date';
 
 export const defaultStatsState: StatsState = {
   todaySolvedCount: 0,
@@ -14,31 +13,34 @@ export const defaultStatsState: StatsState = {
   lastStudyDate: '',
 };
 
-const calculateStreak = (dailySolvedMap: Record<string, number>) => {
-  let streak = 0;
-  const cursor = new Date();
-  while (true) {
-    const key = cursor.toISOString().split('T')[0];
-    if ((dailySolvedMap[key] || 0) <= 0) break;
-    streak += 1;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
-};
-
 export const migrateStatsToV3 = (): StatsState => {
+  const today = getTodayLocalDateKey();
   const v3 = storage.get<StatsState | null>(STORAGE_KEYS.STATS_V3, null);
-  if (v3) return v3;
+
+  if (v3) {
+    const normalized = {
+      ...v3,
+      todaySolvedCount: v3.dailySolvedMap?.[today] || 0,
+      streakDays: calculateLocalDateStreak(v3.dailySolvedMap || {}),
+    };
+    storage.set(STORAGE_KEYS.STATS_V3, normalized);
+    return normalized;
+  }
 
   const legacy = storage.get<any>(STORAGE_KEYS.STATS_V2, null);
   const legacyDaily = storage.get<Record<string, number>>(STORAGE_KEYS.DAILY_V1, {});
 
   if (legacy && typeof legacy === 'object' && 'todaySolvedCount' in legacy) {
-    storage.set(STORAGE_KEYS.STATS_V3, legacy as StatsState);
-    return legacy as StatsState;
+    const migratedLegacy = legacy as StatsState;
+    const next = {
+      ...migratedLegacy,
+      todaySolvedCount: migratedLegacy.dailySolvedMap?.[today] || migratedLegacy.todaySolvedCount || 0,
+      streakDays: calculateLocalDateStreak(migratedLegacy.dailySolvedMap || {}),
+    };
+    storage.set(STORAGE_KEYS.STATS_V3, next);
+    return next;
   }
 
-  const today = todayKey();
   if (
     legacy &&
     typeof legacy === 'object' &&
@@ -48,7 +50,7 @@ export const migrateStatsToV3 = (): StatsState => {
     const migrated: StatsState = {
       todaySolvedCount: legacyDaily[today] ?? legacy.todayCount ?? 0,
       totalSolvedCount: legacy.totalSolved ?? 0,
-      streakDays: calculateStreak(legacyDaily),
+      streakDays: calculateLocalDateStreak(legacyDaily),
       xp: legacy.xp ?? 0,
       level: legacy.level ?? 1,
       dailySolvedMap: legacyDaily ?? {},
