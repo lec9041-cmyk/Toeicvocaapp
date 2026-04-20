@@ -1149,7 +1149,7 @@
     if(showLearn){ if(modeField) modeField.classList.remove("hidden"); if(startBtn&&!startBtn.disabled) setStartButtonState(false); }
     if(showHome){ if(modeField) modeField.classList.add("hidden"); const modeSelect=el("modeSelect"); if(modeSelect) modeSelect.value="flash"; if(startBtn&&!startBtn.disabled) setStartButtonState(false); }
     if(isSettings){ if(modeField) modeField.classList.add("hidden"); safeInvoke(applySettingsToUI); }
-    if(panel==="stats") renderMainCalendarSummary(statsViewY,statsViewM);
+    if(panel==="stats") safeInvoke(()=>initStats(statsViewY,statsViewM));
     safeInvoke(updateFlashOffToggleState);
     safeInvoke(updateScopeBar);
     safeInvoke(saveLastStudySettings);
@@ -1385,8 +1385,90 @@
   // ===================================================================
   // 통계 / 기록
   // ===================================================================
-  function bumpDaily(n=1){ const k=todayKey(); const d=load(DAILY_KEY,{}); d[k]=(d[k]||0)+n; save(DAILY_KEY,d); }
-  function calcStreak(){ const daily=load(DAILY_KEY,{}); let streak=0; const d=new Date(); for(;;){ const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; if(daily[k]&&daily[k]>0){streak++;d.setDate(d.getDate()-1);}else break; } return streak; }
+  let statsDerivedCache={last7Days:[],topWrongWords:[],weaknessStats:[]};
+  function getDailyMap(){
+    const raw=load(DAILY_KEY,{});
+    if(!raw||typeof raw!=="object") return {};
+    const out={};
+    Object.entries(raw).forEach(([k,v])=>{
+      const n=Math.max(0,Number(v)||0);
+      if(/^\d{4}-\d{2}-\d{2}$/.test(k)) out[k]=n;
+    });
+    return out;
+  }
+  function bumpDaily(n=1){ const k=todayKey(); const d=getDailyMap(); d[k]=(d[k]||0)+n; save(DAILY_KEY,d); }
+  function parseDateKey(dateKey){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey||""))) return null;
+    const [y,m,d]=String(dateKey).split("-").map(Number);
+    const dt=new Date(y,m-1,d);
+    return Number.isNaN(dt.getTime())?null:dt;
+  }
+  function calcStreak(dailyMap=null){
+    const daily=dailyMap&&typeof dailyMap==="object"?dailyMap:getDailyMap();
+    const activeKeys=Object.keys(daily).filter(k=>(daily[k]||0)>0);
+    if(activeKeys.length===0) return 0;
+    let cursor=todayKey();
+    if((daily[cursor]||0)<=0){
+      const latest=activeKeys.sort().at(-1);
+      if(!latest) return 0;
+      cursor=latest;
+    }
+    let streak=0;
+    let d=parseDateKey(cursor);
+    while(d){
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      if((daily[k]||0)<=0) break;
+      streak++;
+      d.setDate(d.getDate()-1);
+    }
+    return streak;
+  }
+  function getLast7DaysData(){
+    const daily=getDailyMap();
+    const now=new Date();
+    const rows=[];
+    for(let i=6;i>=0;i--){
+      const d=new Date(now);
+      d.setDate(now.getDate()-i);
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      rows.push({date:k,solved:Math.max(0,Number(daily[k])||0)});
+    }
+    return rows;
+  }
+  function getTopWrongWords(limit=5){
+    const log=readWrongLogItems();
+    const map=new Map();
+    log.forEach(entry=>{
+      const word=String(entry?.w||entry?.word||entry?.english||"").trim();
+      if(!word) return;
+      const prev=map.get(word)||{word,count:0,lastTs:0};
+      prev.count+=1;
+      prev.lastTs=Math.max(prev.lastTs,Number(entry?.ts)||0);
+      map.set(word,prev);
+    });
+    return Array.from(map.values()).sort((a,b)=>(b.count-a.count)||((b.lastTs||0)-(a.lastTs||0))).slice(0,Math.max(1,limit));
+  }
+  function scopeIdFromNo(no){
+    const n=Number(no)||0;
+    if(n>=1&&n<=40) return "core";
+    if(n>=41&&n<=68) return "basic";
+    if(n>=69&&n<=136) return "800";
+    if(n>=137) return "900";
+    return null;
+  }
+  function getWeaknessStats(){
+    const words=Object.values(load(WORDS_KEY,{})||{}).flat().filter(x=>x&&typeof x==="object");
+    const wrong=readWrongLogItems();
+    const base={core:{scope:"core",total:0,wrong:0,accuracy:100},basic:{scope:"basic",total:0,wrong:0,accuracy:100},"800":{scope:"800",total:0,wrong:0,accuracy:100},"900":{scope:"900",total:0,wrong:0,accuracy:100}};
+    words.forEach(item=>{ const s=scopeIdFromNo(item?.n); if(!s||!base[s]) return; base[s].total+=1; });
+    wrong.forEach(item=>{ const s=scopeIdFromNo(item?.n); if(!s||!base[s]) return; base[s].wrong+=1; });
+    return Object.values(base).map(row=>{
+      const denominator=Math.max(1,row.total);
+      const wrongRate=Math.min(1,row.wrong/denominator);
+      row.accuracy=Math.max(0,Math.round((1-wrongRate)*100));
+      return row;
+    }).sort((a,b)=>a.accuracy-b.accuracy);
+  }
   function countMonthStudyDays(daily,year,month0){ const prefix=`${year}-${String(month0+1).padStart(2,"0")}-`; return Object.entries(daily).reduce((acc,[k,v])=>k.startsWith(prefix)&&(v||0)>0?acc+1:acc,0); }
   function makeCalCell(dayNum,cnt,goal,isToday=false){ const c=Math.max(0,Number(cnt)||0),g=Math.max(1,Number.isFinite(Number(goal))&&Number(goal)>0?Number(goal):DEFAULT_GOAL); const level=c===0?0:(c<=10?1:(c<=20?2:(c<=30?3:4))); return {className:`calDay calL${level}${c>=g?" calGoal":""}${isToday?" calToday":""}`,cnt:c,dot:c>0}; }
   function drawCalendarGrid(gridEl,{year,month0,daily,goal}){
@@ -1395,14 +1477,34 @@
     for(let i=0;i<startDow;i++){ const b=document.createElement("div"); b.style.opacity="0"; b.className="calDay"; gridEl.appendChild(b); }
     for(let day=1;day<=lastDate;day++){ const key=`${year}-${String(month0+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; const info=makeCalCell(day,daily[key]||0,goal,key===todayKey()); const cell=document.createElement("div"); cell.className=info.className; cell.dataset.cnt=String(info.cnt); cell.innerHTML=`<div class="calNum">${day}</div>${info.dot?'<span class="calDot"></span>':''}`; gridEl.appendChild(cell); }
   }
+  function setTextSafe(id,val){ const node=el(id); if(node) node.textContent=String(val); }
+  function setStyleWidthSafe(id,val){ const node=el(id); if(node) node.style.width=val; }
+  function initStats(viewY=statsViewY,viewM=statsViewM){
+    statsDerivedCache.last7Days=getLast7DaysData();
+    statsDerivedCache.topWrongWords=getTopWrongWords(5);
+    statsDerivedCache.weaknessStats=getWeaknessStats();
+    renderMainCalendarSummary(viewY,viewM);
+    return statsDerivedCache;
+  }
   function renderMainCalendarSummary(viewY=statsViewY,viewM=statsViewM){
     if(!el("mainCalGrid")) return; statsViewY=viewY; statsViewM=viewM;
-    const daily=load(DAILY_KEY,{}),todayCount=daily[todayKey()]||0,streak=calcStreak(),goal=getGoal();
-    const sessions=load(SESSION_KEY,[]),totalSolved=sessions.reduce((acc,x)=>acc+(x.total||0),0),totalWrong=sessions.reduce((acc,x)=>acc+(x.wrongCount||0),0),favCount=Object.keys(load(FAVORITES_KEY,{})).length;
+    const daily=getDailyMap(),todayCount=Math.max(0,Number(daily[todayKey()])||0),streak=calcStreak(daily),goal=Math.max(1,Number(getGoal())||DEFAULT_GOAL);
+    const totalSolved=Object.values(daily).reduce((acc,v)=>acc+(Math.max(0,Number(v)||0)),0);
+    const totalWrong=readWrongLogItems().length;
+    const favCount=Object.keys(load(FAVORITES_KEY,{})||{}).length;
     const goalPct=Math.max(0,Math.min(100,Math.round((todayCount/goal)*100)));
-    el("mainCalTodayCount").textContent=todayCount; el("mainCalStreak").textContent=`${streak}일`; el("mainCalMonthDays").textContent=`${countMonthStudyDays(daily,statsViewY,statsViewM)}일`; el("mainCalMonthLabel").textContent=`${statsViewY}년 ${statsViewM+1}월`;
-    el("statsTodayLine").textContent=`${todayCount}문제`; el("statsStreakLine").textContent=`${streak}일`; el("statsGoalPill").textContent=goal; el("statsGoalProgress").textContent=`${todayCount} / ${goal}`; el("statsGoalBar").style.width=`${goalPct}%`;
-    el("statsTotalSolved").textContent=totalSolved; el("statsTotalWrong").textContent=totalWrong; el("statsFavCount").textContent=favCount;
+    setTextSafe("mainCalTodayCount",todayCount);
+    setTextSafe("mainCalStreak",`${streak}일`);
+    setTextSafe("mainCalMonthDays",`${countMonthStudyDays(daily,statsViewY,statsViewM)}일`);
+    setTextSafe("mainCalMonthLabel",`${statsViewY}년 ${statsViewM+1}월`);
+    setTextSafe("statsTodayLine",`${todayCount}문제`);
+    setTextSafe("statsStreakLine",`${streak}일`);
+    setTextSafe("statsGoalPill",goal);
+    setTextSafe("statsGoalProgress",`${todayCount} / ${goal}`);
+    setStyleWidthSafe("statsGoalBar",`${goalPct}%`);
+    setTextSafe("statsTotalSolved",totalSolved);
+    setTextSafe("statsTotalWrong",totalWrong);
+    setTextSafe("statsFavCount",favCount);
     drawCalendarGrid(el("mainCalGrid"),{year:statsViewY,month0:statsViewM,daily,goal});
   }
   function renderLearnDayProgress(){ const wrap=el("learnDayProgress"); if(!wrap) return; const data=load(WORDS_KEY,{}),stats=statsMap(),allDays=getAllDays(data); wrap.innerHTML=""; if(allDays.length===0){wrap.innerHTML=`<div class="item"><div class="muted">DAY 데이터가 없어요.</div></div>`;return;} const legend=document.createElement("div"); legend.className="muted"; legend.style.fontSize="12px"; legend.style.marginBottom="2px"; legend.textContent="🌱 미시작 · 🔥 진행중 · 🌿 완료 · 🌳 마스터"; wrap.appendChild(legend); const pct=(a,b)=>b?Math.round((a/b)*100):0; allDays.forEach(day=>{ const words=data[day]||[],total=words.length,keys=words.map(keyOf),logged=keys.reduce((acc,k)=>acc+(((stats[k]?.correctCount||0)+(stats[k]?.wrongCount||0)>0)?1:0),0),wrongN=keys.reduce((acc,k)=>acc+((stats[k]?.wrongCount||0)>0?1:0),0),progressPct=pct(logged,total); let emoji="🌱"; if(logged===0) emoji="🌱"; else if(logged>=total&&wrongN===0&&total>0) emoji="🌳"; else if(logged>=total) emoji="🌿"; else emoji="🔥"; const row=document.createElement("div"); row.className="item"; row.innerHTML=`<div class="itemTop" style="margin-bottom:6px;align-items:center;"><div class="itemWord">${emoji} ${esc(dayLabel(day))}</div><span class="badge">${progressPct}%</span></div><div class="muted" style="font-size:12px;">학습 ${logged}/${total} · 오답 ${wrongN}</div><div class="progress-container" style="margin:8px 0 0;"><div class="progress-bar" style="width:${progressPct}%"></div></div>`; wrap.appendChild(row); }); }
@@ -1422,7 +1524,7 @@
     updateComebackBanner(today);
     updateXpUI();
     updateHomeRecommendations();
-    renderMainCalendarSummary(statsViewY,statsViewM);
+    initStats(statsViewY,statsViewM);
     if(el("learnProgressDetails")?.open) renderLearnDayProgress();
     checkGoalAndCelebrate();
   }
