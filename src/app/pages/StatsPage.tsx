@@ -1,12 +1,11 @@
 import { StatsSummaryCards } from '../components/stats/StatsSummaryCards';
 import { useAppStore } from '../store/useAppStore';
+import { getDateKeyDaysAgo } from '../utils/date';
 
 export function StatsPage() {
   const { state } = useAppStore();
   const recent7 = Array.from({ length: 7 }, (_, idx) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - idx));
-    const key = date.toISOString().split('T')[0];
+    const key = getDateKeyDaysAgo(6 - idx);
     return { key, count: state.stats.dailySolvedMap[key] || 0 };
   });
   const max = Math.max(...recent7.map((item) => item.count), 1);
