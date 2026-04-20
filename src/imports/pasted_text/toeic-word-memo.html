@@ -1099,8 +1099,8 @@
   const modeFlashOption=el("modeFlashOption");
   const todayStudyCard=el("todayStudyCard"), learnSettingsCard=el("learnSettingsCard"), bottomToolsCard=el("bottomToolsCard"), statsCard=el("statsCard"), settingsCard=el("settingsCard");
   let statsViewY=new Date().getFullYear(), statsViewM=new Date().getMonth(), calClickBound=false;
-  function isLearnTab(){ return mainTabLearn.classList.contains("active"); }
-  function isHomeTab(){ return mainTabHome.classList.contains("active"); }
+  function isLearnTab(){ return !!mainTabLearn?.classList.contains("active"); }
+  function isHomeTab(){ return !!mainTabHome?.classList.contains("active"); }
   function setFlashOptionEnabled(enabled){
     if(!modeFlashOption) return;
     modeFlashOption.disabled=!enabled;
@@ -1121,8 +1121,21 @@
       return [];
     }
   }
+  function getReviewableWrongWords(){
+    const rows=readWrongLogItems();
+    const byKey=new Map();
+    rows.forEach(entry=>{
+      const key=String(entry?.key||"").trim()||`${entry?.day||""}-${entry?.n||""}-${entry?.w||""}`;
+      if(!key) return;
+      const prev=byKey.get(key);
+      if(!prev||(Number(prev.ts)||0)<(Number(entry?.ts)||0)) byKey.set(key,entry);
+    });
+    return Array.from(byKey.values())
+      .map(x=>({day:x.day,n:x.n,w:x.w,m:x.m,ts:x.ts}))
+      .filter(x=>x.day&&x.w);
+  }
   function refreshWrongReviewButtons(){
-    const hasWrong=readWrongLogItems().length>0;
+    const hasWrong=getReviewableWrongWords().length>0;
     const todayWrongBtn=el("todayWrongBtn"), homeWrongBtn=el("homeWrongActionBtn"), recWrongBtn=el("recommendWrongBtn");
     if(todayWrongBtn) todayWrongBtn.disabled=!hasWrong;
     if(homeWrongBtn) homeWrongBtn.disabled=!hasWrong;
@@ -1160,14 +1173,15 @@
     startBtn.disabled=!!locked;
     startBtn.textContent=locked?"로딩 중...":"🚀 암기 시작";
   }
-  mainTabHome.onclick=()=>showMainPanel("home");
-  mainTabLearn.onclick=()=>showMainPanel("learn");
-  mainTabStats.onclick=()=>showMainPanel("stats");
+  if(mainTabHome) mainTabHome.onclick=()=>showMainPanel("home");
+  if(mainTabLearn) mainTabLearn.onclick=()=>showMainPanel("learn");
+  if(mainTabStats) mainTabStats.onclick=()=>showMainPanel("stats");
   if(mainTabSettings) mainTabSettings.onclick=()=>showMainPanel("settings");
   function bindStatsCalNav(){
-    el("mainCalPrevBtn").onclick=()=>{ statsViewM--; if(statsViewM<0){statsViewM=11;statsViewY--;} renderMainCalendarSummary(statsViewY,statsViewM); };
-    el("mainCalNextBtn").onclick=()=>{ statsViewM++; if(statsViewM>11){statsViewM=0;statsViewY++;} renderMainCalendarSummary(statsViewY,statsViewM); };
-    el("mainCalTodayBtn").onclick=()=>{ const now=new Date(); statsViewY=now.getFullYear(); statsViewM=now.getMonth(); renderMainCalendarSummary(statsViewY,statsViewM); };
+    const prevBtn=el("mainCalPrevBtn"),nextBtn=el("mainCalNextBtn"),todayBtn=el("mainCalTodayBtn");
+    if(prevBtn) prevBtn.onclick=()=>{ statsViewM--; if(statsViewM<0){statsViewM=11;statsViewY--;} renderMainCalendarSummary(statsViewY,statsViewM); };
+    if(nextBtn) nextBtn.onclick=()=>{ statsViewM++; if(statsViewM>11){statsViewM=0;statsViewY++;} renderMainCalendarSummary(statsViewY,statsViewM); };
+    if(todayBtn) todayBtn.onclick=()=>{ const now=new Date(); statsViewY=now.getFullYear(); statsViewM=now.getMonth(); renderMainCalendarSummary(statsViewY,statsViewM); };
   }
   function bindMainCalendarClick(){
     if(calClickBound) return; const grid=el("mainCalGrid"); if(!grid) return;
@@ -1534,15 +1548,45 @@
     return `${modeText} · ${dirText}`;
   }
   function findNextDayLabel(){
-    const data=load(WORDS_KEY,{}),days=getAllDays(data);
-    if(!days.length) return "-";
-    const stats=statsMap();
-    for(const d of days){
-      const words=data[d]||[];
-      const solved=words.some(item=>{ const s=stats[keyOf(item)]||{}; return (s.correctCount||0)+(s.wrongCount||0)>0; });
-      if(!solved) return dayLabel(d);
+    const next=getNextDayFromLastStudy();
+    return next?dayLabel(next):"-";
+  }
+  function dayNumber(dayKey){ const n=parseInt(String(dayKey||"").replace(/[^\d]/g,""),10); return Number.isFinite(n)?n:null; }
+  function dayKeyFromNumber(dayNum,allDayKeys=[]){
+    return allDayKeys.find(k=>dayNumber(k)===dayNum)||allDayKeys[0]||null;
+  }
+  function getNextDayFromLastStudy(){
+    const data=load(WORDS_KEY,{}),allDayKeys=getAllDays(data);
+    if(!allDayKeys.length) return null;
+    const allNums=allDayKeys.map(dayNumber).filter(Number.isFinite);
+    const maxDay=Math.max(...allNums), minDay=Math.min(...allNums);
+    const sessions=load(SESSION_KEY,[]);
+    const lastSessionDays=Array.isArray(sessions?.[0]?.days)?sessions[0].days:[];
+    const lastStudy=load(LAST_STUDY_SETTINGS_KEY,null);
+    const fallbackDays=Array.isArray(lastStudy?.dayKeys)?lastStudy.dayKeys:[];
+    const source=(lastSessionDays.length?lastSessionDays:fallbackDays).map(dayNumber).filter(Number.isFinite);
+    if(!source.length) return allDayKeys[0];
+    const highest=Math.max(...source);
+    let nextNum=highest>=maxDay?minDay:highest+1;
+    if(!allNums.includes(nextNum)){ const larger=allNums.filter(n=>n>highest).sort((a,b)=>a-b)[0]; nextNum=Number.isFinite(larger)?larger:minDay; }
+    return dayKeyFromNumber(nextNum,allDayKeys);
+  }
+  function withTemporarySelectedDays(dayKeys,run){
+    const prev=new Set(dayPickSelected);
+    if(Array.isArray(dayKeys)&&dayKeys.length){ dayPickSelected=new Set(dayKeys); updateDayPickLabel(); }
+    try{ return run(); }
+    finally {
+      setTimeout(()=>{
+        dayPickSelected=prev;
+        updateDayPickLabel();
+      },40);
     }
-    return dayLabel(days[days.length-1]);
+  }
+  function startHomeQuickStartQuiz(){
+    const nextDay=getNextDayFromLastStudy();
+    if(!nextDay){ showMainPanel("learn"); alert("먼저 DAY를 선택해 주세요!"); return; }
+    saveLastStudySettings();
+    withTemporarySelectedDays([nextDay],()=>startQuiz());
   }
   function updateHomeRecommendations(){
     const sessions=load(SESSION_KEY,[]);
@@ -1884,11 +1928,7 @@
   }
 
   function startFromHomeCTA(){
-    if(load(RANDOM_DAY_AUTO_KEY,false)&&el("randomDayToggle").checked) applyRandomDays();
-    const hasDay=selectedDaysForPool().length>0;
-    if(!hasDay){ showMainPanel("learn"); alert("먼저 DAY를 선택해 주세요!"); return; }
-    saveLastStudySettings();
-    startQuiz();
+    startHomeQuickStartQuiz();
   }
 
   startBtn.onclick=()=>{ if(load(RANDOM_DAY_AUTO_KEY,false)&&el("randomDayToggle").checked) applyRandomDays(); saveLastStudySettings(); startQuiz(); };
@@ -1896,26 +1936,26 @@
   el("homeStartPrimary").onclick=()=>startFromHomeCTA();
   el("homeResumeActionBtn").onclick=()=>el("resumeBtn").click();
   function triggerWrongReviewFlow(){
-    const list=readWrongLogItems();
+    const list=getReviewableWrongWords();
     if(list.length===0){
       refreshWrongReviewButtons();
       alert("복습할 오답이 아직 없어요. 먼저 문제를 풀고 오답을 쌓아보세요!");
       return;
     }
-    startTodayWrongReview();
+    startQuiz(list.map(x=>({day:x.day,n:x.n,w:x.w,m:x.m})),"flash");
   }
   el("homeWrongActionBtn").onclick=triggerWrongReviewFlow;
   el("homeGoalActionBtn").onclick=()=>el("statsGoalPill").click();
   el("recentContinueBtn").onclick=()=>el("resumeBtn").click();
   el("recommendWrongBtn").onclick=()=>{
-    if(readWrongLogItems().length===0){
+    if(getReviewableWrongWords().length===0){
       refreshWrongReviewButtons();
       alert("오답노트가 비어있어요. 먼저 학습 후 다시 시도해 주세요!");
       return;
     }
     openSheet("wrong");
   };
-  el("recommendNextDayBtn").onclick=()=>{ showMainPanel("learn"); openDayPick(); };
+  el("recommendNextDayBtn").onclick=()=>startHomeQuickStartQuiz();
   el("question").onclick=()=>{ const word=pool[idx]?.w; if(word) openNaverDict(word); };
 
   function setQuizHeaderScope(){ const daysText=(quizState?.days||[]).map(dayLabel).join(", ")||"-"; el("quizScopeLine").textContent=`DAY: ${daysText} · 범위: ${quizState?.ranges||"-"} · 문제수: ${quizState?.count??pool.length}`; }
@@ -2035,12 +2075,7 @@
   el("showAnswerBtn").onclick=()=>{ clearAutoNext(); clearAllTimers(); el("feedback").innerHTML=`정답: <b>${esc(quizState.dir==="en2ko"?pool[idx].m:pool[idx].w)}</b>`; el("nextBtn").classList.remove("hidden"); locked=true; queueResumeSave(); };
   el("retestAllBtn").onclick=()=>{ if(wrong.length===0) return; startQuiz(wrong,quizState.mode); };
   function startWrongOnlyQuiz(){ const list=Object.values(statsMap()).filter(x=>(x?.wrongCount||0)>0); if(list.length===0) return alert("오답노트가 비어있어요!"); closeSheet(); startQuiz(list,quizState?.mode||(isLearnTab()?"flash":el("modeSelect").value)); }
-  function startTodayWrongReview(){
-    const list=recentWrongWords(3);
-    if(list.length===0) return alert("최근 오답이 아직 없어요. 먼저 1~2문제만 풀어보세요!");
-    startQuiz(list.map(x=>({day:x.day,n:x.n,w:x.w,m:x.m})),"flash");
-    quizState.reviewType="todayWrong";
-  }
+  function startTodayWrongReview(){ return triggerWrongReviewFlow(); }
   el("todayWrongBtn").onclick=triggerWrongReviewFlow;
   if(el("quickTestBtn")) el("quickTestBtn").onclick=()=>{ showMainPanel("test"); setStartButtonState(false); };
   el("sessionContinueBtn").onclick=()=>{ el("sessionCompleteCard")?.classList.add("hidden"); startQuiz(); };
