@@ -1,25 +1,28 @@
-export interface ResumeWord {
-  day: number;
-  no: number;
-  english: string;
-  korean: string;
-  index: number;
-}
+import { AnswerRecordInput, QuizSessionMeta } from '../types/quiz';
+import { QuizDirection, Word } from '../types/stats';
 
-export interface ResumePayload {
-  mode: string;
-  direction: string;
-  count: number;
-  days: number[];
-  ranges: string[];
-  remainingWords: ResumeWord[];
-  updatedAt: number;
-}
+export const gradeAnswer = (input: AnswerRecordInput) => input.isCorrect;
 
-export const saveResumePayload = (payload: ResumePayload) => {
-  localStorage.setItem('toeic_resume_v1', JSON.stringify(payload));
+export const buildMcChoices = (
+  words: Word[],
+  currentIndex: number,
+  direction: QuizDirection
+) => {
+  const current = words[currentIndex];
+  if (!current) return [];
+
+  const answer = direction === 'en2ko' ? current.korean : current.english;
+  const wrongChoices = words
+    .filter((_, index) => index !== currentIndex)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map((word) => (direction === 'en2ko' ? word.korean : word.english));
+
+  return [answer, ...wrongChoices].sort(() => Math.random() - 0.5);
 };
 
-export const clearResumePayload = () => {
-  localStorage.removeItem('toeic_resume_v1');
-};
+export const buildResumeSnapshot = (meta: QuizSessionMeta, remainingWords: Word[]) => ({
+  ...meta,
+  remainingWords,
+  updatedAt: Date.now(),
+});

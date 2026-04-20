@@ -1,25 +1,21 @@
-export interface SessionRecord {
-  ts: number;
-  mode: string;
-  dir: string;
+import { SessionHistoryItem } from '../types/stats';
+
+export const finalizeSession = (input: {
+  mode: SessionHistoryItem['mode'];
+  direction: SessionHistoryItem['direction'];
   total: number;
   score: number;
-  wrongCount: number;
   days: number[];
   ranges: string[];
-}
-
-export const appendSessionRecord = (record: SessionRecord) => {
-  const sessionsRaw = localStorage.getItem('toeic_sessions_v1');
-  let sessions: SessionRecord[] = [];
-  if (sessionsRaw) {
-    try {
-      sessions = JSON.parse(sessionsRaw);
-    } catch {
-      sessions = [];
-    }
-  }
-
-  sessions.unshift(record);
-  localStorage.setItem('toeic_sessions_v1', JSON.stringify(sessions.slice(0, 200)));
+}): SessionHistoryItem => {
+  return {
+    ts: Date.now(),
+    mode: input.mode,
+    direction: input.direction,
+    total: input.total,
+    score: input.score,
+    wrongCount: Math.max(0, input.total - input.score),
+    days: input.days,
+    ranges: input.ranges,
+  };
 };
