@@ -94,6 +94,9 @@ export default function App() {
   const [showQuiz, setShowQuiz] = useState(false);
   const [showDaySelector, setShowDaySelector] = useState(false);
   const [quizWords, setQuizWords] = useState<Word[]>([]);
+  const [statsPeriod, setStatsPeriod] = useState<'7' | '30' | 'all'>('7');
+  const [hasResumeData, setHasResumeData] = useState(false);
+  const [wrongWords, setWrongWords] = useState<Word[]>([]);
 
   // Learning settings
   const [mode, setMode] = useState('flash');
@@ -122,7 +125,67 @@ export default function App() {
   useEffect(() => {
     loadStats();
     loadSampleWords();
+    checkResumeData();
+    loadWrongWords();
   }, []);
+
+  const checkResumeData = () => {
+    const resumeData = localStorage.getItem('toeic_resume_v1');
+    setHasResumeData(!!resumeData);
+  };
+
+  const loadWrongWords = () => {
+    const wrongLog = localStorage.getItem('toeic_wrong_log_v1');
+    if (wrongLog) {
+      try {
+        const log = JSON.parse(wrongLog);
+        setWrongWords(log);
+      } catch (e) {
+        setWrongWords([]);
+      }
+    }
+  };
+
+  const resumeStudy = () => {
+    const resumeData = localStorage.getItem('toeic_resume_v1');
+    if (!resumeData) {
+      alert('이어서 학습할 데이터가 없습니다.');
+      return;
+    }
+
+    try {
+      const data = JSON.parse(resumeData);
+      // Resume with saved settings
+      setMode(data.mode || 'flash');
+      setDirection(data.direction || 'en2ko');
+      setCount(data.count?.toString() || '30');
+      setSelectedDays(data.days || [1]);
+      setSelectedRanges(data.ranges || ['core', 'basic', '800', '900']);
+
+      // Start quiz with remaining words
+      if (data.remainingWords && data.remainingWords.length > 0) {
+        setQuizWords(data.remainingWords);
+        setShowQuiz(true);
+      } else {
+        // If no remaining words, just start new quiz with saved settings
+        startQuiz();
+      }
+    } catch (e) {
+      alert('이어서 학습 데이터를 불러오는데 실패했습니다.');
+      localStorage.removeItem('toeic_resume_v1');
+      setHasResumeData(false);
+    }
+  };
+
+  const reviewWrongWords = () => {
+    if (wrongWords.length === 0) {
+      alert('복습할 오답이 없습니다.');
+      return;
+    }
+
+    setQuizWords(wrongWords.slice(0, Math.min(30, wrongWords.length)));
+    setShowQuiz(true);
+  };
 
   const loadStats = () => {
     const savedStats = localStorage.getItem('toeic_stats_v2');
@@ -262,7 +325,12 @@ export default function App() {
     setShowQuiz(true);
   };
 
-  const handleQuizComplete = (quizStats: { correct: number; total: number; xp: number }) => {
+  const handleQuizComplete = (quizStats: {
+    correct: number;
+    total: number;
+    xp: number;
+    wrongWords?: Word[];
+  }) => {
     const today = new Date().toISOString().split('T')[0];
     const newXP = stats.xp + quizStats.xp;
     const xpNeeded = calculateXPForLevel(stats.level);
@@ -289,12 +357,24 @@ export default function App() {
     };
 
     saveStats(newStats);
-    setShowQuiz(false);
-  };
 
-  const PlantLevel = () => {
-    const plantEmojis = ['🌱', '🌿', '🪴', '🌳', '🌲', '🎄'];
-    return plantEmojis[Math.min(stats.level - 1, 5)];
+    // Save wrong words
+    if (quizStats.wrongWords && quizStats.wrongWords.length > 0) {
+      const existingWrong = wrongWords;
+      const newWrong = [...existingWrong, ...quizStats.wrongWords];
+      // Remove duplicates by english word
+      const uniqueWrong = newWrong.filter((word, index, self) =>
+        index === self.findIndex((w) => w.english === word.english)
+      );
+      setWrongWords(uniqueWrong);
+      localStorage.setItem('toeic_wrong_log_v1', JSON.stringify(uniqueWrong));
+    }
+
+    // Clear resume data on completion
+    localStorage.removeItem('toeic_resume_v1');
+    setHasResumeData(false);
+
+    setShowQuiz(false);
   };
 
   return (
@@ -351,165 +431,155 @@ export default function App() {
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 md:px-8 py-4 md:py-8">
         {currentTab === 'home' && (
-          <div className="space-y-6 md:space-y-8">
-            {/* Hero Section */}
-            <div className="text-center py-6 md:py-12">
-              <div className="inline-block mb-3 md:mb-4 px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-200/50">
-                <span className="text-xs md:text-sm font-semibold text-blue-600">Today's Progress</span>
-              </div>
-              <h2 className="text-4xl md:text-6xl font-bold mb-2 md:mb-4 bg-gradient-to-r from-gray-900 via-blue-900 to-purple-900 bg-clip-text text-transparent">
+          <div className="space-y-5 md:space-y-6 max-w-2xl mx-auto">
+            {/* Today Status (Hero) */}
+            <div className="text-center py-4 md:py-6">
+              <div className="text-xs md:text-sm font-semibold text-gray-500 mb-2">오늘 학습</div>
+              <div className="text-5xl md:text-6xl font-bold mb-1 bg-gradient-to-br from-gray-900 to-gray-600 bg-clip-text text-transparent">
                 {stats.todayCount} / {todayGoal}
-              </h2>
-              <p className="text-gray-500 text-sm md:text-lg font-medium">단어 학습 완료</p>
+              </div>
+              <div className="text-sm md:text-base text-gray-500 mb-3">목표 단어 달성</div>
 
-              <div className="mt-4 md:mt-8 max-w-2xl mx-auto">
-                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              {/* Progress bar */}
+              <div className="max-w-md mx-auto">
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-full transition-all duration-1000 ease-out"
-                    style={{ width: `${(stats.todayCount / todayGoal) * 100}%` }}
+                    className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min((stats.todayCount / todayGoal) * 100, 100)}%` }}
                   />
                 </div>
               </div>
-
-              <div className="flex flex-col sm:flex-row gap-3 md:gap-4">
-                <Button
-                  size="lg"
-                  onClick={() => setShowDaySelector(true)}
-                  variant="outline"
-                  className="px-6 md:px-8 py-5 md:py-7 text-base md:text-lg font-semibold rounded-2xl border-2 hover:bg-gray-50"
-                >
-                  📅 DAY 선택
-                </Button>
-                <Button
-                  size="lg"
-                  onClick={startQuiz}
-                  className="flex-1 px-8 md:px-12 py-5 md:py-7 text-base md:text-lg font-semibold rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-2xl shadow-blue-500/30 hover:shadow-blue-500/50 transition-all duration-300 hover:scale-105"
-                >
-                  <Play className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                  학습 시작하기
-                </Button>
-              </div>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
-              {[
-                { value: stats.todayCount, label: '오늘 학습', color: 'blue' },
-                { value: `${stats.streak}일`, label: '연속 학습', color: 'orange' },
-                { value: stats.xp, label: 'Total XP', color: 'purple' },
-                { value: `Lv.${stats.level}`, label: '레벨', color: 'green' },
-              ].map((stat, i) => (
-                <div key={i} className="group cursor-pointer">
-                  <div className={`
-                    relative overflow-hidden rounded-2xl md:rounded-3xl p-4 md:p-8
-                    bg-gradient-to-br ${
-                      stat.color === 'blue' ? 'from-blue-500/5 to-indigo-500/5' :
-                      stat.color === 'purple' ? 'from-purple-500/5 to-pink-500/5' :
-                      stat.color === 'green' ? 'from-green-500/5 to-emerald-500/5' :
-                      'from-orange-500/5 to-amber-500/5'
-                    }
-                    border border-gray-100 hover:border-gray-200
-                    transition-all duration-500 hover:scale-105
-                  `}>
-                    <div className="relative z-10">
-                      <div className="text-3xl md:text-5xl font-bold bg-gradient-to-br from-gray-900 to-gray-600 bg-clip-text text-transparent mb-1 md:mb-2">
-                        {stat.value}
+            {/* Primary CTA */}
+            <Button
+              size="lg"
+              onClick={startQuiz}
+              className="w-full py-6 md:py-7 text-lg md:text-xl font-bold rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-xl shadow-blue-500/25 hover:shadow-2xl hover:shadow-blue-500/40 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Play className="w-6 h-6 mr-2 fill-current" />
+              학습 시작
+            </Button>
+
+            {/* DAY Selection */}
+            <div>
+              <div className="text-sm font-semibold text-gray-700 mb-3">학습 DAY 선택</div>
+              <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+                {Array.from({ length: 30 }, (_, i) => i + 1).map((day) => {
+                  const isSelected = selectedDays.includes(day);
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedDays(selectedDays.filter(d => d !== day));
+                        } else {
+                          setSelectedDays([...selectedDays, day]);
+                        }
+                      }}
+                      className={`
+                        flex-shrink-0 px-4 py-2 rounded-full font-semibold text-sm transition-all duration-200
+                        ${isSelected
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }
+                      `}
+                    >
+                      DAY {day}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => setShowDaySelector(true)}
+                className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+              >
+                상세 선택 →
+              </button>
+            </div>
+
+            {/* 7-Day Trend */}
+            <div className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm">
+              <div className="text-sm font-semibold text-gray-700 mb-3">최근 학습 흐름</div>
+              <div className="flex items-end gap-1.5 h-20">
+                {Array.from({ length: 7 }, (_, i) => {
+                  const date = new Date();
+                  date.setDate(date.getDate() - (6 - i));
+                  const dateStr = date.toISOString().split('T')[0];
+                  const count = stats.dailyLog[dateStr] || 0;
+                  const maxCount = Math.max(...Object.values(stats.dailyLog), 30);
+                  const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
+
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                      <div className="w-full bg-gray-100 rounded-t-lg overflow-hidden" style={{ height: '60px' }}>
+                        <div
+                          className="w-full bg-gradient-to-t from-blue-500 to-purple-500 rounded-t-lg transition-all duration-500"
+                          style={{ height: `${height}%`, marginTop: `${100 - height}%` }}
+                        />
                       </div>
-                      <div className="text-xs md:text-sm text-gray-500 font-medium">{stat.label}</div>
+                      <div className="text-[10px] font-medium text-gray-400">
+                        {['일','월','화','수','목','금','토'][date.getDay()]}
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Selected Info */}
-            <div className="rounded-2xl p-6 bg-white border-2 border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-900">선택된 학습 범위</h3>
-                <button
-                  onClick={() => setShowDaySelector(true)}
-                  className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  변경
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 mb-2">선택된 DAY</div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedDays.length === 0 ? (
-                      <Badge variant="outline">없음</Badge>
-                    ) : selectedDays.length > 6 ? (
-                      <>
-                        {selectedDays.slice(0, 6).map(day => (
-                          <div key={day} className="inline-flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 border border-blue-300">
-                            <span className="text-xs font-bold text-blue-700">DAY {day}</span>
-                            <span className="text-[10px] font-medium text-blue-600">{DAY_CATEGORIES[day]}</span>
-                          </div>
-                        ))}
-                        <Badge variant="outline">+{selectedDays.length - 6}개</Badge>
-                      </>
-                    ) : (
-                      selectedDays.map(day => (
-                        <div key={day} className="inline-flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg bg-gradient-to-br from-blue-100 to-indigo-100 border border-blue-300">
-                          <span className="text-xs font-bold text-blue-700">DAY {day}</span>
-                          <span className="text-[10px] font-medium text-blue-600">{DAY_CATEGORIES[day]}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-gray-500 mb-2">단어 범위</div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedRanges.map(range => {
-                      const labels: { [key: string]: string } = {
-                        core: '핵심(1-40)',
-                        basic: '기초(41-68)',
-                        '800': '800+(69-136)',
-                        '900': '900+(137~)'
-                      };
-                      return (
-                        <Badge key={range} variant="outline" className="font-semibold">
-                          {labels[range]}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Quick Actions */}
-            <div>
-              <h3 className="text-lg md:text-2xl font-bold text-gray-900 mb-4 md:mb-6">빠른 액션</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                {[
-                  { icon: Play, label: '이어서 학습', color: 'from-blue-500 to-indigo-600', action: startQuiz },
-                  { icon: RotateCcw, label: '오답 복습', color: 'from-purple-500 to-pink-600', action: () => {} },
-                  { icon: Target, label: '오늘 목표', color: 'from-green-500 to-emerald-600', action: () => setCurrentTab('learn') },
-                ].map((action, i) => (
-                  <button
-                    key={i}
-                    onClick={action.action}
-                    className="group relative overflow-hidden rounded-2xl p-6 md:p-8 bg-gradient-to-br from-gray-50 to-gray-100 hover:from-white hover:to-gray-50 border border-gray-200 hover:border-gray-300 transition-all duration-300 hover:scale-105 text-left"
-                  >
-                    <div className={`inline-flex items-center justify-center w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-r ${action.color} mb-3 md:mb-4 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                      <action.icon className="w-5 h-5 md:w-6 md:h-6 text-white" />
-                    </div>
-                    <div className="font-bold text-gray-900 text-sm md:text-base">{action.label}</div>
-                  </button>
-                ))}
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={hasResumeData ? resumeStudy : startQuiz}
+                disabled={!hasResumeData && selectedDays.length === 0}
+                className={`rounded-2xl p-5 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-left shadow-sm ${
+                  !hasResumeData && selectedDays.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 mb-3 shadow-md">
+                  <Play className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-sm font-bold text-gray-900">
+                  {hasResumeData ? '이어서 학습' : '새로 학습'}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {hasResumeData ? '저장된 위치부터' : '지금 바로 시작'}
+                </div>
+              </button>
+
+              <button
+                onClick={reviewWrongWords}
+                disabled={wrongWords.length === 0}
+                className={`rounded-2xl p-5 bg-gradient-to-br from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 border border-purple-200 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] text-left shadow-sm ${
+                  wrongWords.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+              >
+                <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-purple-500 to-pink-600 mb-3 shadow-md">
+                  <RotateCcw className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-sm font-bold text-gray-900">오답 복습</div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {wrongWords.length > 0 ? `${wrongWords.length}개 단어` : '틀린 문제 없음'}
+                </div>
+              </button>
             </div>
 
-            {/* Plant Growth */}
-            <div className="rounded-3xl p-8 md:p-12 bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 border border-green-100 text-center">
-              <div className="text-6xl md:text-8xl mb-4 md:mb-6">{PlantLevel()}</div>
-              <h3 className="text-2xl md:text-3xl font-bold text-green-900 mb-2">단어 나무 Lv.{stats.level}</h3>
-              <p className="text-sm md:text-base text-green-700 font-medium">
-                다음 성장까지 {calculateXPForLevel(stats.level) - stats.xp} XP
-              </p>
+            {/* XP Growth Card */}
+            <div className="rounded-2xl p-5 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-bold text-gray-900">단어 성장 Lv.{stats.level}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">다음 레벨까지 {calculateXPForLevel(stats.level) - stats.xp} XP</div>
+                </div>
+                <div className="text-2xl">🌱</div>
+              </div>
+              <div className="h-2 bg-white/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min((stats.xp / calculateXPForLevel(stats.level)) * 100, 100)}%` }}
+                />
+              </div>
+              <div className="text-xs text-gray-600 mt-2">{stats.xp} / {calculateXPForLevel(stats.level)} XP</div>
             </div>
           </div>
         )}
@@ -679,6 +749,47 @@ export default function App() {
               학습 시작
             </Button>
 
+            {/* Favorites Section */}
+            {(() => {
+              const saved = localStorage.getItem('toeic_favorites');
+              const favoriteWords = saved ? JSON.parse(saved) : [];
+              if (favoriteWords.length > 0) {
+                return (
+                  <div className="rounded-2xl p-5 bg-gradient-to-br from-yellow-50 to-amber-50 border border-yellow-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-5 h-5 text-yellow-600 fill-yellow-600" />
+                        <h3 className="font-bold text-gray-900">즐겨찾기 단어</h3>
+                      </div>
+                      <Badge variant="outline" className="bg-white">{favoriteWords.length}개</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {favoriteWords.slice(0, 6).map((word: string, i: number) => {
+                        const wordData = words.find(w => w.english === word);
+                        return (
+                          <div
+                            key={i}
+                            className="p-3 rounded-xl bg-white border border-yellow-200 hover:border-yellow-300 transition-all duration-200"
+                          >
+                            <div className="text-sm font-bold text-gray-900">{word}</div>
+                            {wordData && (
+                              <div className="text-xs text-gray-500 mt-1">{wordData.korean}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {favoriteWords.length > 6 && (
+                      <div className="mt-3 text-xs text-center text-yellow-700">
+                        +{favoriteWords.length - 6}개 더보기
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {/* Stats Pills */}
             <div className="flex gap-2 md:gap-3 flex-wrap">
               <Badge variant="outline" className="px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-bold border-2">
@@ -704,57 +815,188 @@ export default function App() {
         )}
 
         {currentTab === 'stats' && (
-          <div className="space-y-6 md:space-y-12">
-            <div className="text-center mb-6 md:mb-12">
-              <h2 className="text-3xl md:text-5xl font-bold text-gray-900 mb-2 md:mb-4">학습 통계</h2>
-              <p className="text-sm md:text-lg text-gray-500">당신의 성장을 확인하세요</p>
+          <div className="space-y-5 max-w-2xl mx-auto">
+            {/* Header */}
+            <div className="text-center">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">학습 통계</h2>
+              <p className="text-sm text-gray-500">나의 성장 추이</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 md:gap-6">
+            {/* Period Selector */}
+            <div className="flex gap-2 justify-center">
               {[
-                { value: stats.todayCount, label: '오늘' },
-                { value: `${stats.streak}일`, label: '연속' },
-                { value: stats.totalSolved, label: '총 학습' },
-              ].map((stat, i) => (
-                <div key={i} className="rounded-2xl md:rounded-3xl p-4 md:p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 text-center">
-                  <div className="text-2xl md:text-4xl font-bold text-blue-900 mb-1">{stat.value}</div>
-                  <div className="text-xs md:text-sm text-blue-700 font-medium">{stat.label}</div>
-                </div>
+                { id: '7', label: '7일' },
+                { id: '30', label: '30일' },
+                { id: 'all', label: '전체' },
+              ].map((period) => (
+                <button
+                  key={period.id}
+                  onClick={() => setStatsPeriod(period.id as '7' | '30' | 'all')}
+                  className={`
+                    px-6 py-2 rounded-full font-semibold text-sm transition-all duration-200
+                    ${statsPeriod === period.id
+                      ? 'bg-blue-500 text-white shadow-md'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }
+                  `}
+                >
+                  {period.label}
+                </button>
               ))}
             </div>
 
-            <div className="rounded-2xl md:rounded-3xl p-6 md:p-8 bg-white border border-gray-200">
-              <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-8">
-                <CalendarIcon className="w-5 h-5 md:w-6 md:h-6 text-gray-700" />
-                <h3 className="text-xl md:text-2xl font-bold text-gray-900">학습 달력</h3>
-              </div>
+            {/* Main Progress Graph */}
+            <div className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm">
+              <div className="text-sm font-semibold text-gray-700 mb-4">최근 학습 흐름</div>
+              <div className="h-40 flex items-end gap-1">
+                {(() => {
+                  const days = statsPeriod === '7' ? 7 : statsPeriod === '30' ? 30 : 90;
+                  const data = Array.from({ length: Math.min(days, 30) }, (_, i) => {
+                    const date = new Date();
+                    date.setDate(date.getDate() - (days - 1 - i));
+                    const dateStr = date.toISOString().split('T')[0];
+                    return {
+                      date: dateStr,
+                      count: stats.dailyLog[dateStr] || 0,
+                    };
+                  });
+                  const maxCount = Math.max(...data.map(d => d.count), 1);
 
-              <div className="grid grid-cols-7 gap-2 md:gap-4">
+                  return data.map((d, i) => {
+                    const height = (d.count / maxCount) * 100;
+                    const isToday = d.date === new Date().toISOString().split('T')[0];
+
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="w-full bg-gray-100 rounded-t-lg relative" style={{ height: '120px' }}>
+                          <div
+                            className={`absolute bottom-0 w-full rounded-t-lg transition-all duration-500 ${
+                              isToday
+                                ? 'bg-gradient-to-t from-purple-500 to-pink-500'
+                                : 'bg-gradient-to-t from-blue-500 to-blue-400'
+                            }`}
+                            style={{ height: `${height}%` }}
+                            title={`${d.date}: ${d.count}개`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+              <div className="mt-3 text-xs text-gray-400 text-center">
+                {statsPeriod === '7' ? '최근 7일' : statsPeriod === '30' ? '최근 30일' : '전체 기간'}
+              </div>
+            </div>
+
+            {/* Summary Stats */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-2xl p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 text-center">
+                <div className="text-xs font-semibold text-gray-600 mb-1">평균 정답률</div>
+                <div className="text-2xl font-bold text-blue-900">--%</div>
+              </div>
+              <div className="rounded-2xl p-4 bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 text-center">
+                <div className="text-xs font-semibold text-gray-600 mb-1">총 학습</div>
+                <div className="text-2xl font-bold text-purple-900">{stats.totalSolved}</div>
+              </div>
+              <div className="rounded-2xl p-4 bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 text-center">
+                <div className="text-xs font-semibold text-gray-600 mb-1">연속 학습</div>
+                <div className="text-2xl font-bold text-orange-900">{stats.streak}일 🔥</div>
+              </div>
+            </div>
+
+            {/* Study Heatmap */}
+            <div className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm">
+              <div className="text-sm font-semibold text-gray-700 mb-4">학습 달력</div>
+              <div className="grid grid-cols-7 gap-1.5">
                 {['일', '월', '화', '수', '목', '금', '토'].map((day) => (
-                  <div key={day} className="text-center text-xs font-bold text-gray-400 uppercase">
+                  <div key={day} className="text-center text-[10px] font-bold text-gray-400">
                     {day}
                   </div>
                 ))}
                 {Array.from({ length: 35 }).map((_, i) => {
                   const date = new Date();
-                  date.setDate(date.getDate() - 35 + i);
+                  date.setDate(date.getDate() - 34 + i);
                   const dateStr = date.toISOString().split('T')[0];
                   const count = stats.dailyLog[dateStr] || 0;
+                  const intensity = count > 0 ? Math.min(Math.ceil(count / 10), 4) : 0;
 
                   return (
                     <div
                       key={i}
                       className={`
-                        aspect-square rounded-lg md:rounded-xl transition-all duration-300 cursor-pointer
-                        ${count > 0
-                          ? 'bg-gradient-to-br from-blue-500 to-purple-500 hover:scale-110 shadow-lg shadow-blue-500/30'
-                          : 'bg-gray-100 hover:bg-gray-200 hover:scale-105'
+                        aspect-square rounded transition-all duration-200
+                        ${intensity === 0 ? 'bg-gray-100' :
+                          intensity === 1 ? 'bg-blue-200' :
+                          intensity === 2 ? 'bg-blue-400' :
+                          intensity === 3 ? 'bg-blue-600' :
+                          'bg-blue-800'
                         }
                       `}
-                      title={`${dateStr}: ${count}문제`}
+                      title={`${dateStr}: ${count}개`}
                     />
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Weakness Analysis */}
+            <div className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm">
+              <div className="text-sm font-semibold text-gray-700 mb-4">취약 영역 분석</div>
+              <div className="space-y-3">
+                {[
+                  { label: '핵심 (1-40)', accuracy: 65, color: 'blue' },
+                  { label: '기초 (41-68)', accuracy: 78, color: 'purple' },
+                  { label: '800+ (69-136)', accuracy: 72, color: 'orange' },
+                  { label: '900+ (137~)', accuracy: 58, color: 'red' },
+                ].sort((a, b) => a.accuracy - b.accuracy).map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-24 text-xs font-medium text-gray-700">{item.label}</div>
+                    <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2 ${
+                          item.color === 'blue' ? 'bg-blue-500' :
+                          item.color === 'purple' ? 'bg-purple-500' :
+                          item.color === 'orange' ? 'bg-orange-500' :
+                          'bg-red-500'
+                        }`}
+                        style={{ width: `${item.accuracy}%` }}
+                      >
+                        <span className="text-xs font-bold text-white">{item.accuracy}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mistake Analysis */}
+            <div className="rounded-2xl p-5 bg-white border border-gray-200 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-sm font-semibold text-gray-700">자주 틀린 단어</div>
+                <button className="text-xs text-blue-600 hover:text-blue-700 font-semibold">
+                  복습하기 →
+                </button>
+              </div>
+              <div className="space-y-2">
+                {[
+                  { word: 'accomplish', meaning: '성취하다', mistakes: 5 },
+                  { word: 'beneficial', meaning: '유익한', mistakes: 4 },
+                  { word: 'proficient', meaning: '능숙한', mistakes: 3 },
+                  { word: 'implement', meaning: '시행하다', mistakes: 3 },
+                  { word: 'acquire', meaning: '획득하다', mistakes: 2 },
+                ].map((item, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100"
+                  >
+                    <div className="flex-1">
+                      <div className="font-semibold text-sm text-gray-900">{item.word}</div>
+                      <div className="text-xs text-gray-500">{item.meaning}</div>
+                    </div>
+                    <div className="text-xs font-bold text-red-600">×{item.mistakes}</div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

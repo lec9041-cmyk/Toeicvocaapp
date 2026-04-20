@@ -178,4 +178,14 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+
+  /* Hide scrollbar for DAY selection */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

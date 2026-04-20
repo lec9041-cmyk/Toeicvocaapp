@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Badge } from './ui/badge';
-import { Volume2, X, Star, BookOpen } from 'lucide-react';
+import { Volume2, X, Star, BookOpen, ExternalLink } from 'lucide-react';
 
 interface Word {
   day: number;
@@ -50,7 +50,7 @@ interface QuizModalProps {
   mode: 'flash' | 'mc' | 'sa';
   direction: 'en2ko' | 'ko2en';
   onClose: () => void;
-  onComplete: (stats: { correct: number; total: number; xp: number }) => void;
+  onComplete: (stats: { correct: number; total: number; xp: number; wrongWords?: Word[] }) => void;
 }
 
 export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizModalProps) {
@@ -61,6 +61,11 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [choices, setChoices] = useState<string[]>([]);
+  const [wrongWordsList, setWrongWordsList] = useState<Word[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('toeic_favorites');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
 
   const currentWord = words[currentIndex];
   const question = direction === 'en2ko' ? currentWord?.english : currentWord?.korean;
@@ -86,15 +91,38 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
 
   const speak = (text: string) => {
     if ('speechSynthesis' in window && direction === 'en2ko') {
+      speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
+      utterance.rate = 0.85;
       speechSynthesis.speak(utterance);
     }
   };
 
+  const openNaverDict = (word: string) => {
+    window.open(
+      `https://en.dict.naver.com/#/search?query=${encodeURIComponent(word)}`,
+      '_blank'
+    );
+  };
+
+  const toggleFavorite = (word: string) => {
+    const newFavorites = new Set(favorites);
+    if (newFavorites.has(word)) {
+      newFavorites.delete(word);
+    } else {
+      newFavorites.add(word);
+    }
+    setFavorites(newFavorites);
+    localStorage.setItem('toeic_favorites', JSON.stringify(Array.from(newFavorites)));
+  };
+
   const handleFlashReveal = () => {
     setIsRevealed(true);
-    speak(currentWord.english);
+    // Auto-play pronunciation when revealing
+    if (direction === 'en2ko') {
+      setTimeout(() => speak(currentWord.english), 300);
+    }
   };
 
   const handleFlashAnswer = (knowIt: boolean) => {
@@ -102,6 +130,8 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
       setScore(score + 1);
     } else {
       setWrongCount(wrongCount + 1);
+      // Record wrong word
+      setWrongWordsList([...wrongWordsList, currentWord]);
     }
     nextQuestion();
   };
@@ -115,6 +145,8 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
       setScore(score + 1);
     } else {
       setWrongCount(wrongCount + 1);
+      // Record wrong word
+      setWrongWordsList([...wrongWordsList, currentWord]);
     }
 
     setTimeout(() => {
@@ -131,7 +163,12 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
     } else {
       // Quiz complete
       const xpGained = score * 10;
-      onComplete({ correct: score, total: words.length, xp: xpGained });
+      onComplete({
+        correct: score,
+        total: words.length,
+        xp: xpGained,
+        wrongWords: wrongWordsList,
+      });
     }
   };
 
@@ -335,11 +372,23 @@ export function QuizModal({ words, mode, direction, onClose, onComplete }: QuizM
               <Volume2 className="w-4 h-4 text-gray-600" />
               <span className="text-xs md:text-sm font-semibold text-gray-700">발음</span>
             </button>
-            <button className="flex-1 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 py-3 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all duration-200 hover:scale-105 active:scale-95">
-              <Star className="w-4 h-4 text-gray-600" />
-              <span className="text-xs md:text-sm font-semibold text-gray-700">즐겨찾기</span>
+            <button
+              onClick={() => toggleFavorite(currentWord.english)}
+              className={`flex-1 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 py-3 rounded-xl border transition-all duration-200 hover:scale-105 active:scale-95 ${
+                favorites.has(currentWord.english)
+                  ? 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100'
+                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              <Star className={`w-4 h-4 ${favorites.has(currentWord.english) ? 'text-yellow-500 fill-yellow-500' : 'text-gray-600'}`} />
+              <span className={`text-xs md:text-sm font-semibold ${favorites.has(currentWord.english) ? 'text-yellow-700' : 'text-gray-700'}`}>
+                즐겨찾기
+              </span>
             </button>
-            <button className="flex-1 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 py-3 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all duration-200 hover:scale-105 active:scale-95">
+            <button
+              onClick={() => openNaverDict(currentWord.english)}
+              className="flex-1 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 py-3 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200 transition-all duration-200 hover:scale-105 active:scale-95"
+            >
               <BookOpen className="w-4 h-4 text-gray-600" />
               <span className="text-xs md:text-sm font-semibold text-gray-700">사전</span>
             </button>
