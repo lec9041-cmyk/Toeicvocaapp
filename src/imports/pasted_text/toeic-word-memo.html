@@ -1106,28 +1106,60 @@
     modeFlashOption.disabled=!enabled;
     modeFlashOption.hidden=!enabled;
   }
+  function safeInvoke(fn){
+    if(typeof fn!=="function") return;
+    try{ fn(); }catch(err){ console.error("[safeInvoke] helper failed:", err); }
+  }
+  function readWrongLogItems(){
+    try{
+      const raw=load(WRONG_LOG_KEY,[]);
+      if(Array.isArray(raw)) return raw.filter(x=>x&&typeof x==="object"&&x.w);
+      if(raw&&typeof raw==="object") return Object.values(raw).filter(x=>x&&typeof x==="object"&&x.w);
+      return [];
+    }catch(err){
+      console.error("[wrong-log] failed to read:", err);
+      return [];
+    }
+  }
+  function refreshWrongReviewButtons(){
+    const hasWrong=readWrongLogItems().length>0;
+    const todayWrongBtn=el("todayWrongBtn"), homeWrongBtn=el("homeWrongActionBtn"), recWrongBtn=el("recommendWrongBtn");
+    if(todayWrongBtn) todayWrongBtn.disabled=!hasWrong;
+    if(homeWrongBtn) homeWrongBtn.disabled=!hasWrong;
+    if(recWrongBtn){
+      recWrongBtn.classList.toggle("is-disabled",!hasWrong);
+      recWrongBtn.setAttribute("aria-disabled",String(!hasWrong));
+    }
+  }
   function showMainPanel(panel){
     const isStats=panel==="stats";
     const isHome=panel==="home";
     const isSettings=panel==="settings";
-    mainTabHome.classList.toggle("active",isHome);
-    mainTabLearn.classList.toggle("active",panel==="learn");
-    mainTabStats.classList.toggle("active",isStats);
+    if(mainTabHome) mainTabHome.classList.toggle("active",isHome);
+    if(mainTabLearn) mainTabLearn.classList.toggle("active",panel==="learn");
+    if(mainTabStats) mainTabStats.classList.toggle("active",isStats);
     if(mainTabSettings) mainTabSettings.classList.toggle("active",isSettings);
     const showLearn = panel==="learn";
     const showHome = panel==="home";
-    learnSettingsCard.classList.toggle("hidden",!showLearn);
-    todayStudyCard.classList.toggle("hidden",!showHome);
-    bottomToolsCard.classList.toggle("hidden",!(showLearn||isStats));
-    statsCard.classList.toggle("hidden",!isStats);
+    if(learnSettingsCard) learnSettingsCard.classList.toggle("hidden",!showLearn);
+    if(todayStudyCard) todayStudyCard.classList.toggle("hidden",!showHome);
+    if(bottomToolsCard) bottomToolsCard.classList.toggle("hidden",!(showLearn||isStats));
+    if(statsCard) statsCard.classList.toggle("hidden",!isStats);
     if(settingsCard) settingsCard.classList.toggle("hidden",!isSettings);
-    if(showLearn){ modeField.classList.remove("hidden"); if(!startBtn.disabled) setStartButtonState(false); }
-    if(showHome){ modeField.classList.add("hidden"); el("modeSelect").value="flash"; if(!startBtn.disabled) setStartButtonState(false); }
-    if(isSettings){ modeField.classList.add("hidden"); applySettingsToUI(); }
+    if(showLearn){ if(modeField) modeField.classList.remove("hidden"); if(startBtn&&!startBtn.disabled) setStartButtonState(false); }
+    if(showHome){ if(modeField) modeField.classList.add("hidden"); const modeSelect=el("modeSelect"); if(modeSelect) modeSelect.value="flash"; if(startBtn&&!startBtn.disabled) setStartButtonState(false); }
+    if(isSettings){ if(modeField) modeField.classList.add("hidden"); safeInvoke(applySettingsToUI); }
     if(panel==="stats") renderMainCalendarSummary(statsViewY,statsViewM);
-    updateFlashOffToggleState(); updateScopeBar(); saveLastStudySettings();
+    safeInvoke(updateFlashOffToggleState);
+    safeInvoke(updateScopeBar);
+    safeInvoke(saveLastStudySettings);
+    refreshWrongReviewButtons();
   }
-  function setStartButtonState(locked){ startBtn.disabled=!!locked; startBtn.textContent=locked?"로딩 중...":"🚀 암기 시작"; }
+  function setStartButtonState(locked){
+    if(!startBtn) return;
+    startBtn.disabled=!!locked;
+    startBtn.textContent=locked?"로딩 중...":"🚀 암기 시작";
+  }
   mainTabHome.onclick=()=>showMainPanel("home");
   mainTabLearn.onclick=()=>showMainPanel("learn");
   mainTabStats.onclick=()=>showMainPanel("stats");
@@ -1761,10 +1793,26 @@
   el("resumeBtn").onclick=()=>{ if(load(RESUME_KEY,null)) return resumeQuiz(); if(applyLastStudySettings()){ saveLastStudySettings(); startQuiz(); } else alert("저장된 학습 설정이 없어요."); };
   el("homeStartPrimary").onclick=()=>startFromHomeCTA();
   el("homeResumeActionBtn").onclick=()=>el("resumeBtn").click();
-  el("homeWrongActionBtn").onclick=()=>el("todayWrongBtn").click();
+  function triggerWrongReviewFlow(){
+    const list=readWrongLogItems();
+    if(list.length===0){
+      refreshWrongReviewButtons();
+      alert("복습할 오답이 아직 없어요. 먼저 문제를 풀고 오답을 쌓아보세요!");
+      return;
+    }
+    startTodayWrongReview();
+  }
+  el("homeWrongActionBtn").onclick=triggerWrongReviewFlow;
   el("homeGoalActionBtn").onclick=()=>el("statsGoalPill").click();
   el("recentContinueBtn").onclick=()=>el("resumeBtn").click();
-  el("recommendWrongBtn").onclick=()=>openSheet("wrong");
+  el("recommendWrongBtn").onclick=()=>{
+    if(readWrongLogItems().length===0){
+      refreshWrongReviewButtons();
+      alert("오답노트가 비어있어요. 먼저 학습 후 다시 시도해 주세요!");
+      return;
+    }
+    openSheet("wrong");
+  };
   el("recommendNextDayBtn").onclick=()=>{ showMainPanel("learn"); openDayPick(); };
   el("question").onclick=()=>{ const word=pool[idx]?.w; if(word) openNaverDict(word); };
 
@@ -1891,7 +1939,7 @@
     startQuiz(list.map(x=>({day:x.day,n:x.n,w:x.w,m:x.m})),"flash");
     quizState.reviewType="todayWrong";
   }
-  el("todayWrongBtn").onclick=startTodayWrongReview;
+  el("todayWrongBtn").onclick=triggerWrongReviewFlow;
   if(el("quickTestBtn")) el("quickTestBtn").onclick=()=>{ showMainPanel("test"); setStartButtonState(false); };
   el("sessionContinueBtn").onclick=()=>{ el("sessionCompleteCard")?.classList.add("hidden"); startQuiz(); };
   el("sessionReviewWrongBtn").onclick=()=>{ if(!wrong.length) return alert("오답이 없어요!"); startQuiz(wrong,quizState?.mode); };
@@ -1928,10 +1976,12 @@
   // ===================================================================
   // 초기 로드
   // ===================================================================
-  modeField.classList.add("hidden");
-  el("modeSelect").value="flash";
+  if(modeField) modeField.classList.add("hidden");
+  const modeSelect=el("modeSelect");
+  if(modeSelect) modeSelect.value="flash";
   showMainPanel("home");
-  updateScopeBar();
+  safeInvoke(updateScopeBar);
+  refreshWrongReviewButtons();
   ensureLoaded();
 </script>
 </body>
